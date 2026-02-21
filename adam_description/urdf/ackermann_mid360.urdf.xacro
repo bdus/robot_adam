@@ -67,6 +67,12 @@
                 <color rgba="0.1 0.1 0.1 1.0"/>
             </material>
         </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="1.57079 0 0"/>
+            <geometry>
+                <cylinder length="0.032" radius="0.04"/>
+            </geometry>
+        </collision>
         <xacro:cylinder_inertia m="0.5" r="0.04" h="0.032"/>
     </link>
 
@@ -75,6 +81,12 @@
         <child link="front_left_wheel_link"/>
         <origin xyz="0.08 0.07 -0.04" rpy="0 0 0"/>
     </joint>
+
+    <gazebo reference="front_left_wheel_link">
+        <material>Gazebo/Black</material>
+        <mu1>1.0</mu1>
+        <mu2>1.0</mu2>
+    </gazebo>
 
     <!-- 前右轮 -->
     <link name="front_right_wheel_link">
@@ -87,6 +99,12 @@
                 <color rgba="0.1 0.1 0.1 1.0"/>
             </material>
         </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="1.57079 0 0"/>
+            <geometry>
+                <cylinder length="0.032" radius="0.04"/>
+            </geometry>
+        </collision>
         <xacro:cylinder_inertia m="0.5" r="0.04" h="0.032"/>
     </link>
 
@@ -95,6 +113,12 @@
         <child link="front_right_wheel_link"/>
         <origin xyz="0.08 -0.07 -0.04" rpy="0 0 0"/>
     </joint>
+
+    <gazebo reference="front_right_wheel_link">
+        <material>Gazebo/Black</material>
+        <mu1>1.0</mu1>
+        <mu2>1.0</mu2>
+    </gazebo>
 
     <!-- 后左轮 -->
     <link name="rear_left_wheel_link">
@@ -107,6 +131,12 @@
                 <color rgba="0.1 0.1 0.1 1.0"/>
             </material>
         </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="1.57079 0 0"/>
+            <geometry>
+                <cylinder length="0.032" radius="0.04"/>
+            </geometry>
+        </collision>
         <xacro:cylinder_inertia m="0.5" r="0.04" h="0.032"/>
     </link>
 
@@ -115,6 +145,12 @@
         <child link="rear_left_wheel_link"/>
         <origin xyz="-0.08 0.07 -0.04" rpy="0 0 0"/>
     </joint>
+
+    <gazebo reference="rear_left_wheel_link">
+        <material>Gazebo/Black</material>
+        <mu1>1.0</mu1>
+        <mu2>1.0</mu2>
+    </gazebo>
 
     <!-- 后右轮 -->
     <link name="rear_right_wheel_link">
@@ -127,6 +163,12 @@
                 <color rgba="0.1 0.1 0.1 1.0"/>
             </material>
         </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="1.57079 0 0"/>
+            <geometry>
+                <cylinder length="0.032" radius="0.04"/>
+            </geometry>
+        </collision>
         <xacro:cylinder_inertia m="0.5" r="0.04" h="0.032"/>
     </link>
 
@@ -136,10 +178,16 @@
         <origin xyz="-0.08 -0.07 -0.04" rpy="0 0 0"/>
     </joint>
 
+    <gazebo reference="rear_right_wheel_link">
+        <material>Gazebo/Black</material>
+        <mu1>1.0</mu1>
+        <mu2>1.0</mu2>
+    </gazebo>
+
     <!-- =============== 传感器安装 =============== -->
 
-    <!-- Mid360 3D 激光雷达 (顶部中央) -->
-    <xacro:mid360 name="mid360" parent="base_link" topic="/livox/lidar">
+    <!-- 2D 激光雷达 (顶部中央) -->
+    <xacro:mid360 name="laser" parent="base_link">
         <origin xyz="0.0 0.0 0.06" rpy="0 0 0"/>
     </xacro:mid360>
 

@@ -1,0 +1,3 @@
+[submodule "3rd_packages/livox_ros_driver2"]
+	path = 3rd_packages/livox_ros_driver2
+	url = git@github.com:Livox-SDK/livox_ros_driver2.git

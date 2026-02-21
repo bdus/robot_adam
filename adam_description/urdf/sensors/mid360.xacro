@@ -29,17 +29,14 @@
       <visual>
         <origin xyz="0.025 -0.0265 -0.025" rpy="${pi/2} 0 ${pi}"/>
         <geometry>
-          <mesh filename="package://adam_description/data/meshes/mid360.stl" scale="0.0008 0.0008 0.0008"/>
+          <mesh filename="file://$(find adam_description)/data/meshes/mid360.stl" scale="0.0008 0.0008 0.0008"/>
         </geometry>
-        <material name="mid360_material">
-          <color rgba="0.2 0.2 0.2 1.0"/>
-        </material>
       </visual>
 
       <collision>
         <origin xyz="0.025 -0.0265 -0.025" rpy="${pi/2} 0 ${pi}"/>
         <geometry>
-          <mesh filename="package://adam_description/data/meshes/mid360.stl" scale="0.0008 0.0008 0.0008"/>
+          <mesh filename="file://$(find adam_description)/data/meshes/mid360.stl" scale="0.0008 0.0008 0.0008"/>
         </geometry>
       </collision>
       <xacro:box_inertia m="${mass}" w="${width}" h="${height}" d="${length}"/>
