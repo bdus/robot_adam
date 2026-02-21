@@ -13,7 +13,6 @@
     <!-- =============== 包含插件 =============== -->
     <xacro:include filename="$(find adam_description)/urdf/plugins/ros2_control.xacro"/>
     <xacro:include filename="$(find adam_description)/urdf/plugins/gazebo_control.xacro"/>
-    <xacro:include filename="$(find adam_description)/urdf/plugins/gazebo_sensors.xacro"/>
 
     <!-- =============== 创建机器人 =============== -->
 
@@ -221,6 +220,5 @@
     <!-- =============== 应用插件 =============== -->
     <xacro:ros2_control/>
     <xacro:gazebo_control/>
-    <xacro:gazebo_sensors/>
 
 </robot>
