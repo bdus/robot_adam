@@ -1,0 +1,105 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <xacro:include filename="$(find adam_description)/urdf/common/common_inertia.xacro"/>
+
+    <!-- =============== 2D 激光雷达 =============== -->
+    <xacro:macro name="laser_2d" params="name:='laser' parent:='base_link' *origin">
+
+        <!-- 雷达支撑杆 -->
+        <link name="${name}_support_link">
+            <visual>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <cylinder length="0.10" radius="0.01"/>
+                </geometry>
+                <material name="support_material">
+                    <color rgba="0.0 0.5 0.0 1.0"/>
+                </material>
+            </visual>
+            <collision>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <cylinder length="0.10" radius="0.01"/>
+                </geometry>
+                <material name="support_material"/>
+            </collision>
+            <xacro:cylinder_inertia m="0.01" r="0.01" h="0.10"/>
+        </link>
+
+        <joint name="${name}_support_joint" type="fixed">
+            <parent link="${parent}"/>
+            <child link="${name}_support_link"/>
+            <xacro:insert_block name="origin"/>
+        </joint>
+
+        <!-- 雷达头 -->
+        <link name="${name}_link">
+            <visual>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <cylinder length="0.02" radius="0.02"/>
+                </geometry>
+                <material name="laser_material">
+                    <color rgba="0.0 0.8 0.0 1.0"/>
+                </material>
+            </visual>
+            <collision>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <cylinder length="0.02" radius="0.02"/>
+                </geometry>
+                <material name="laser_material"/>
+            </collision>
+            <xacro:cylinder_inertia m="0.03" r="0.02" h="0.02"/>
+        </link>
+
+        <joint name="${name}_joint" type="fixed">
+            <parent link="${name}_support_link"/>
+            <child link="${name}_link"/>
+            <origin xyz="0 0 0.05" rpy="0 0 0"/>
+        </joint>
+
+        <!-- Gazebo 传感器插件 -->
+        <gazebo reference="${name}_link">
+            <sensor type="ray" name="${name}_sensor">
+                <plugin name="${name}_plugin" filename="libgazebo_ros_ray_sensor.so">
+                    <ros>
+                        <namespace>/</namespace>
+                        <remapping>~/out:=/scan</remapping>
+                    </ros>
+                    <output_type>sensor_msgs/LaserScan</output_type>
+                    <frame_name>${name}_link</frame_name>
+                    <range_max>10.0</range_max>
+                    <range_min>0.12</range_min>
+                </plugin>
+                <always_on>true</always_on>
+                <visualize>true</visualize>
+                <update_rate>10</update_rate>
+                <pose>0 0 0 0 0 0</pose>
+                <ray>
+                    <scan>
+                        <horizontal>
+                            <samples>360</samples>
+                            <resolution>1.0</resolution>
+                            <min_angle>-3.14159</min_angle>
+                            <max_angle>3.14159</max_angle>
+                        </horizontal>
+                    </scan>
+                    <range>
+                        <min>0.12</min>
+                        <max>10.0</max>
+                        <resolution>0.015</resolution>
+                    </range>
+                    <noise>
+                        <type>gaussian</type>
+                        <mean>0.0</mean>
+                        <stddev>0.01</stddev>
+                    </noise>
+                </ray>
+            </sensor>
+        </gazebo>
+
+    </xacro:macro>
+
+</robot>

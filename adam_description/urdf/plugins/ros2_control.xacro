@@ -1,0 +1,64 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <!-- =============== ROS2 Control 配置 =============== -->
+    <!-- 使用简化的配置，和 carbot3d 一致 -->
+    <xacro:macro name="ros2_control">
+
+        <ros2_control name="AdamPlanarSystem" type="system">
+            <hardware>
+                <plugin>gazebo_ros2_control/GazeboSystem</plugin>
+            </hardware>
+
+            <!-- 关节状态接口 -->
+            <joint name="front_left_steering_joint">
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+                <state_interface name="effort"/>
+            </joint>
+
+            <joint name="front_left_drive_joint">
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+                <state_interface name="effort"/>
+            </joint>
+
+            <joint name="front_right_steering_joint">
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+                <state_interface name="effort"/>
+            </joint>
+
+            <joint name="front_right_drive_joint">
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+                <state_interface name="effort"/>
+            </joint>
+
+            <joint name="rear_left_drive_joint">
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+                <state_interface name="effort"/>
+            </joint>
+
+            <joint name="rear_right_drive_joint">
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+                <state_interface name="effort"/>
+            </joint>
+
+        </ros2_control>
+
+        <!-- Gazebo ROS2 Control 插件 -->
+        <gazebo>
+            <plugin filename="libgazebo_ros2_control.so" name="gazebo_ros2_control">
+                <parameters>$(find adam_description)/config/ackermann_controller.yaml</parameters>
+                <ros>
+                    <remapping>/joint_state_broadcaster/odom:=/odom</remapping>
+                </ros>
+            </plugin>
+        </gazebo>
+
+    </xacro:macro>
+
+</robot>
