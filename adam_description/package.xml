@@ -9,6 +9,9 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <!-- 声明对 livox_ros_driver2 的依赖 -->
+  <depend>livox_ros_driver2</depend>
+  
   <depend>rclcpp</depend>
   <depend>std_msgs</depend>
   <depend>sensor_msgs</depend>
