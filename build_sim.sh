@@ -8,4 +8,4 @@ cp -rf 3rd_packages/livox_ros_driver2/launch_ROS2/ 3rd_packages/livox_ros_driver
 
 colcon build --symlink-install --cmake-args -DROS_EDITION=ROS2 -DHUMBLE_ROS=humble 
 
-rm -rf src/common/livox_ros_driver2/launch/
+#rm -rf src/common/livox_ros_driver2/launch/

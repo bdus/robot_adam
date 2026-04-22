@@ -9,7 +9,7 @@
   <xacro:property name="noise_mean" value="0.0"/>
   <xacro:property name="noise_stddev" value="0.002"/>
 
-  <xacro:property name="mass" value="0.4" />
+  <xacro:property name="mass" value="0.1" /> <!-- 重心调不好 0.4 -> 0.1 -->
   <xacro:property name="length" value="0.1" />
   <xacro:property name="width" value="0.06" />
   <xacro:property name="height" value="0.06" />

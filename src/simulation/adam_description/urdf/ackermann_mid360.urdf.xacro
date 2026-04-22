@@ -1,12 +1,12 @@
 <?xml version="1.0"?>
-<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="ackermann_laser">
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="ackermann_mid360">
 
     <!-- =============== 包含公共组件 =============== -->
     <xacro:include filename="$(find adam_description)/urdf/common/common_macros.xacro"/>
     <xacro:include filename="$(find adam_description)/urdf/common/common_inertia.xacro"/>
 
     <!-- =============== 包含传感器 =============== -->
-    <xacro:include filename="$(find adam_description)/urdf/sensors/laser_2d.xacro"/>
+    <xacro:include filename="$(find adam_description)/urdf/sensors/mid360.xacro"/>
     <xacro:include filename="$(find adam_description)/urdf/sensors/imu.xacro"/>
     <xacro:include filename="$(find adam_description)/urdf/sensors/mono_camera.xacro"/>
 
@@ -23,7 +23,7 @@
     <joint name="base_joint" type="fixed">
         <parent link="base_footprint"/>
         <child link="base_link"/>
-        <origin xyz="0 0 0.04" rpy="0 0 0"/>
+        <origin xyz="0 0 0.08" rpy="0 0 0"/>
     </joint>
 
     <link name="base_link">
@@ -185,10 +185,10 @@
 
     <!-- =============== 传感器安装 =============== -->
 
-    <!-- 2D 激光雷达 (顶部中央) -->
-    <xacro:laser_2d name="laser" parent="base_link">
-        <origin xyz="0.0 0.0 0.06" rpy="0 0 0"/>
-    </xacro:laser_2d>
+    <!-- 3D 激光雷达 (顶部中央) -->
+    <xacro:mid360  name="livox_frame" parent="base_link" topic="/livox">
+        <origin xyz="0.0 0.0 0.06" rpy="0.0 0 0.0"/>
+    </xacro:mid360> 
 
     <!-- IMU (内部中央) -->
     <xacro:imu name="imu" parent="base_link">
@@ -200,7 +200,7 @@
         <origin xyz="0.12 0.0 0.03" rpy="0 0.2 0"/>
     </xacro:mono_camera>
 
-    <!-- 前向箭头（视觉指示） -->
+    <!-- 前向箭头（视觉指示）
     <link name="forward_arrow">
         <visual>
             <geometry>
@@ -215,7 +215,7 @@
     <joint name="forward_arrow_joint" type="fixed">
         <parent link="base_link"/>
         <child link="forward_arrow"/>
-    </joint>
+    </joint> -->
 
     <!-- =============== 应用插件 =============== -->
     <xacro:ros2_control/>
