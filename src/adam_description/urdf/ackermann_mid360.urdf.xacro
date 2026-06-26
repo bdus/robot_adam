@@ -20,18 +20,19 @@
     <!-- base_footprint 虚 link -->
     <link name="base_footprint"/>
 
-    <!-- base_link 主底盘 (长 240mm, 宽 140mm, 高 80mm) -->
+    <!-- base_link 主底盘 (长 240mm, 宽 180mm, 高 80mm) -->
     <joint name="base_joint" type="fixed">
         <parent link="base_footprint"/>
         <child link="base_link"/>
-        <origin xyz="0 0 0.04" rpy="0 0 0"/>
+        <!-- 降低 COM 高度以提高转弯稳定性 -->
+        <origin xyz="0 0 0.03" rpy="0 0 0"/>
     </joint>
 
     <link name="base_link">
         <visual>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <box size="0.24 0.14 0.08"/>
+                <box size="0.24 0.18 0.08"/>
             </geometry>
             <material name="base_material">
                 <color rgba="0.2 0.4 0.8 1.0"/>
@@ -41,12 +42,12 @@
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <box size="0.24 0.14 0.08"/>
+                <box size="0.24 0.18 0.08"/>
             </geometry>
             <material name="base_material"/>
         </collision>
 
-        <xacro:box_inertia m="1.5" w="0.24" h="0.08" d="0.14"/>
+        <xacro:box_inertia m="1.5" w="0.24" h="0.08" d="0.18"/>
     </link>
 
     <gazebo reference="base_link">
@@ -79,13 +80,13 @@
     <joint name="front_left_wheel_joint" type="fixed">
         <parent link="base_link"/>
         <child link="front_left_wheel_link"/>
-        <origin xyz="0.08 0.07 -0.04" rpy="0 0 0"/>
+        <origin xyz="0.08 0.085 -0.04" rpy="0 0 0"/>
     </joint>
 
     <gazebo reference="front_left_wheel_link">
         <material>Gazebo/Black</material>
-        <mu1>1.0</mu1>
-        <mu2>1.0</mu2>
+        <mu1>0.5</mu1>
+        <mu2>0.5</mu2>
     </gazebo>
 
     <!-- 前右轮 -->
@@ -111,13 +112,13 @@
     <joint name="front_right_wheel_joint" type="fixed">
         <parent link="base_link"/>
         <child link="front_right_wheel_link"/>
-        <origin xyz="0.08 -0.07 -0.04" rpy="0 0 0"/>
+        <origin xyz="0.08 -0.085 -0.04" rpy="0 0 0"/>
     </joint>
 
     <gazebo reference="front_right_wheel_link">
         <material>Gazebo/Black</material>
-        <mu1>1.0</mu1>
-        <mu2>1.0</mu2>
+        <mu1>0.5</mu1>
+        <mu2>0.5</mu2>
     </gazebo>
 
     <!-- 后左轮 -->
@@ -143,13 +144,13 @@
     <joint name="rear_left_wheel_joint" type="fixed">
         <parent link="base_link"/>
         <child link="rear_left_wheel_link"/>
-        <origin xyz="-0.08 0.07 -0.04" rpy="0 0 0"/>
+        <origin xyz="-0.08 0.085 -0.04" rpy="0 0 0"/>
     </joint>
 
     <gazebo reference="rear_left_wheel_link">
         <material>Gazebo/Black</material>
-        <mu1>1.0</mu1>
-        <mu2>1.0</mu2>
+        <mu1>0.5</mu1>
+        <mu2>0.5</mu2>
     </gazebo>
 
     <!-- 后右轮 -->
@@ -175,13 +176,13 @@
     <joint name="rear_right_wheel_joint" type="fixed">
         <parent link="base_link"/>
         <child link="rear_right_wheel_link"/>
-        <origin xyz="-0.08 -0.07 -0.04" rpy="0 0 0"/>
+        <origin xyz="-0.08 -0.085 -0.04" rpy="0 0 0"/>
     </joint>
 
     <gazebo reference="rear_right_wheel_link">
         <material>Gazebo/Black</material>
-        <mu1>1.0</mu1>
-        <mu2>1.0</mu2>
+        <mu1>0.5</mu1>
+        <mu2>0.5</mu2>
     </gazebo>
 
     <!-- =============== 传感器安装 =============== -->

@@ -27,14 +27,14 @@
                 <robot_base_frame>base_footprint</robot_base_frame>
 
                 <!-- 最大速度 -->
-                <max_vel_x>1.0</max_vel_x>
+                <max_vel_x>0.8</max_vel_x>
                 <max_vel_y>0.0</max_vel_y>
-                <max_vel_theta>1.0</max_vel_theta>
+                <max_vel_theta>0.6</max_vel_theta>
 
                 <!-- 最大加速度 -->
-                <max_accel_x>0.5</max_accel_x>
+                <max_accel_x>0.4</max_accel_x>
                 <max_accel_y>0.0</max_accel_y>
-                <max_accel_theta>0.5</max_accel_theta>
+                <max_accel_theta>0.3</max_accel_theta>
 
             </plugin>
         </gazebo>
