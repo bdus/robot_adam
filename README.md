@@ -19,9 +19,9 @@ robot_adam/
 │   │   └── rviz/              # RViz 配置
 │   ├── launch/                # Launch 文件
 │   └── world/                 # Gazebo 世界模型
-└── adam_bringup/              # 启动包
-    └── launch/
-        └── simulation.launch.py
+├── adam_bringup/              # 启动包
+└── 3rd_packages/              # 第三方包
+    └── livox_ros_driver2/     # Livox 激光雷达驱动
 ```
 
 ## 机器人配置
@@ -52,18 +52,25 @@ robot_adam/
 ### 依赖
 
 ```bash
-sudo apt install ros-<distro>-gazebo-ros*
-sudo apt install ros-<distro>-ackermann-steering-controller
-sudo apt install ros-<distro>-joint-state-broadcaster
-sudo apt install ros-<distro>-robot-state-publisher
-sudo apt install ros-<distro>-gazebo-ros2-control
+# ROS2 基础依赖
+sudo apt install ros-humble-gazebo-ros*
+sudo apt install ros-humble-ackermann-steering-controller \
+    ros-humble-joint-state-broadcaster \
+    ros-humble-robot-state-publisher \
+    ros-humble-joint-state-publisher \
+    ros-humble-rqt-tf-tree
+
+# Livox SDK2 (用于 Mid360 激光雷达)
+cd /tmp && git clone --depth 1 https://github.com/Livox-SDK/Livox-SDK2.git
+cd Livox-SDK2 && mkdir build && cd build && cmake .. && make -j
+sudo -S make install && sudo ldconfig
 ```
 
 ### 编译
 
 ```bash
 cd ~/robot_adam
-colcon build --symlink-install
+./build_sim.sh
 source install/setup.bash
 ```
 
@@ -81,13 +88,9 @@ ros2 launch adam_description gazebo_ackermann_mid360.launch.py
 ros2 launch adam_description gazebo_ackermann_laser.launch.py
 ```
 
-#### 使用统一启动文件
+#### 使用 RViz 可视化
 ```bash
-# 启动 Mid360 版本
-ros2 launch adam_bringup simulation.launch.py model:=ackermann_mid360
-
-# 启动 2D 激光版本
-ros2 launch adam_bringup simulation.launch.py model:=ackermann_laser
+ros2 launch adam_description gazebo_ackermann_mid360.launch.py rviz:=true
 ```
 
 ### 控制机器人
@@ -107,18 +110,18 @@ ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.0}, angular: {z:
 ros2 topic list
 
 # Mid360 版本话题:
-#   /livox/lidar      - 3D 点云
-#   /livox/imu        - IMU 数据
-#   /camera/image_raw - 相机图像
-#   /odom             - 里程计
-#   /joint_states     - 关节状态
+#   /livox/lidar                - 3D 点云
+#   /livox/imu                  - IMU 数据
+#   /camera_sensor/image_raw    - 相机图像
+#   /odom                       - 里程计
+#   /joint_states               - 关节状态
 
 # 2D 激光版本话题:
-#   /scan             - LaserScan
-#   /imu/data         - IMU 数据
-#   /camera/image_raw - 相机图像
-#   /odom             - 里程计
-#   /joint_states     - 关节状态
+#   /scan                       - LaserScan
+#   /imu/data                   - IMU 数据
+#   //camera_sensor/image_raw   - 相机图像
+#   /odom                       - 里程计
+#   /joint_states               - 关节状态
 
 # 查看点云数据
 ros2 topic echo /livox/lidar --no-lost
@@ -150,27 +153,7 @@ ros2 topic echo /imu/data --no-lost
     <!-- <plugin>your_real_robot_driver/YourHardwareInterface</plugin> -->
 </hardware>
 ```
-
-## 话题和服务
-
-### 发布的话题
-
-| 话题名 | 类型 | 说明 |
-|--------|------|------|
-| /cmd_vel | geometry_msgs/Twist | 速度指令 |
-| /odom | nav_msgs/Odometry | 里程计 |
-| /joint_states | sensor_msgs/JointState | 关节状态 |
-| /scan | sensor_msgs/LaserScan | 2D 激光雷达 |
-| /livox/lidar | sensor_msgs/PointCloud2 | 3D 点云 |
-| /imu/data | sensor_msgs/Imu | IMU 数据 |
-| /camera/image_raw | sensor_msgs/Image | 相机图像 |
-
-### 服务
-
-| 服务名 | 类型 | 说明 |
-|--------|------|------|
-| /ackermann_steering_controller/set_odom_pose | geometry_msgs/PoseWithCovarianceStamped | 设置里程计位姿 |
-
+ 
 ## RViz 可视化
 
 启动时会自动打开 RViz，也可以手动启动：
@@ -183,13 +166,7 @@ rviz2 -d src/adam_description/config/rviz/ackermann_mid360.rviz
 rviz2 -d src/adam_description/config/rviz/ackermann_laser.rviz
 ```
 
-## 后续计划
-
-1. **Navigation2 集成**: 添加导航配置和参数
-2. **SLAM 集成**: 支持 Cartographer/LOAM 等 SLAM 算法
-3. **实体车支持**: 添加实车驱动和硬件接口
-4. **更多传感器**: 支持深度相机、毫米波雷达等
-
+ 
 ## 许可证
 
 Apache License 2.0
