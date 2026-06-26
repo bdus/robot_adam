@@ -31,19 +31,21 @@ clean_processes() {
     pkill -9 -f "ign gazebo" 2>/dev/null || true
     pkill -9 -f "ros2_control_node" 2>/dev/null || true
     pkill -9 -f "component_container" 2>/dev/null || true
-    # Only kill robot_state_publisher if it's simulation-related (often spawned by Gazebo)
-    pkill -9 -f "robot_state_publisher.*gazebo" 2>/dev/null || true
-    pkill -9 -f "robot_state_publisher.*sim" 2>/dev/null || true
+    # Kill all robot_state_publisher and joint_state_publisher (often spawned by launch)
+    pkill -9 -f "robot_state_publisher" 2>/dev/null || true
+    pkill -9 -f "joint_state_publisher" 2>/dev/null || true
+    pkill -9 -f "spawn_entity" 2>/dev/null || true
 
     # Clean up Gazebo lock files that can prevent restart
     rm -rf /tmp/*gazebo* /tmp/*ignition* 2>/dev/null || true
     rm -rf "$HOME/.gazebo"/*.lock 2>/dev/null || true
 
-    # Reset ROS2 daemon to flush stale node references
+    # Hard reset ROS2 daemon — processes may be dead but daemon caches stale nodes
     ros2 daemon stop 2>/dev/null || true
+    pkill -9 -f "ros_daemon" 2>/dev/null || true
     sleep 0.5
     ros2 daemon start 2>/dev/null || true
-    sleep 1.0
+    sleep 2.0
 }
 
 check_port() {
@@ -80,7 +82,8 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
     fi
 
     # Filter for simulation-related nodes only
-    SIM_NODES=$(echo "$NODE_LIST" | grep -E "(gazebo|sim|gz)" || true)
+    # Includes common nodes spawned by robot simulation launch files
+    SIM_NODES=$(echo "$NODE_LIST" | grep -E "(gazebo|sim|gz|robot_state_publisher|joint_state_publisher)" || true)
 
     if [ -z "$SIM_NODES" ]; then
         check_port 11345 || exit 1
