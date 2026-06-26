@@ -78,7 +78,7 @@ source install/setup.bash
 
 ### 启动 Gazebo 仿真
 
-#### Mid360 版本
+#### 3D激光雷达(Mid360) 版本
 ```bash
 ros2 launch adam_description gazebo_ackermann_mid360.launch.py
 ```
