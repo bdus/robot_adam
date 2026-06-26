@@ -11,7 +11,8 @@
     <xacro:include filename="$(find adam_description)/urdf/sensors/mono_camera.xacro"/>
 
     <!-- =============== 包含插件 =============== -->
-    <xacro:include filename="$(find adam_description)/urdf/plugins/ros2_control.xacro"/>
+    <!-- 注意: ros2_control.xacro 已注释掉 — URDF 中没有对应的 steering/drive 关节 -->
+    <!-- 机器人使用 planar_move 插件直接驱动底盘 -->
     <xacro:include filename="$(find adam_description)/urdf/plugins/gazebo_control.xacro"/>
     <xacro:include filename="$(find adam_description)/urdf/plugins/gazebo_sensors.xacro"/>
 
@@ -24,8 +25,8 @@
     <joint name="base_joint" type="fixed">
         <parent link="base_footprint"/>
         <child link="base_link"/>
-        <!-- 降低 COM 高度以提高转弯稳定性 -->
-        <origin xyz="0 0 0.03" rpy="0 0 0"/>
+        <!-- COM 高度: 轮子半径(0.04) + 底盘半高(0.04) + 间隙 → 0.09 -->
+        <origin xyz="0 0 0.09" rpy="0 0 0"/>
     </joint>
 
     <link name="base_link">
@@ -80,7 +81,7 @@
     <joint name="front_left_wheel_joint" type="fixed">
         <parent link="base_link"/>
         <child link="front_left_wheel_link"/>
-        <origin xyz="0.08 0.085 -0.04" rpy="0 0 0"/>
+        <origin xyz="0.08 0.085 -0.05" rpy="0 0 0"/>
     </joint>
 
     <gazebo reference="front_left_wheel_link">
@@ -112,7 +113,7 @@
     <joint name="front_right_wheel_joint" type="fixed">
         <parent link="base_link"/>
         <child link="front_right_wheel_link"/>
-        <origin xyz="0.08 -0.085 -0.04" rpy="0 0 0"/>
+        <origin xyz="0.08 -0.085 -0.05" rpy="0 0 0"/>
     </joint>
 
     <gazebo reference="front_right_wheel_link">
@@ -144,7 +145,7 @@
     <joint name="rear_left_wheel_joint" type="fixed">
         <parent link="base_link"/>
         <child link="rear_left_wheel_link"/>
-        <origin xyz="-0.08 0.085 -0.04" rpy="0 0 0"/>
+        <origin xyz="-0.08 0.085 -0.05" rpy="0 0 0"/>
     </joint>
 
     <gazebo reference="rear_left_wheel_link">
@@ -176,7 +177,7 @@
     <joint name="rear_right_wheel_joint" type="fixed">
         <parent link="base_link"/>
         <child link="rear_right_wheel_link"/>
-        <origin xyz="-0.08 -0.085 -0.04" rpy="0 0 0"/>
+        <origin xyz="-0.08 -0.085 -0.05" rpy="0 0 0"/>
     </joint>
 
     <gazebo reference="rear_right_wheel_link">
@@ -220,7 +221,6 @@
     </joint>
 
     <!-- =============== 应用插件 =============== -->
-    <xacro:ros2_control/>
     <xacro:gazebo_control/>
     <xacro:gazebo_sensors/>
 

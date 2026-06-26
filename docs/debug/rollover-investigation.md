@@ -68,3 +68,19 @@ ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.0}, angul
 # 观察里程计确认是否翻车（z 高度应接近 0.05，orientation x/y ≈ 0）
 ros2 topic echo /odom --once
 ```
+
+## 修复验证 (2026-06-27)
+
+### 问题解决确认
+- 持续右转测试：z=1e-7（接近地面），orientation x≈y≈0 → **无翻车**
+- 机器人移动了 2.66m 仍保持稳定
+
+### 关键修复
+1. **删除 ros2_control.xacro**：原来 URDF 包含的 ros2_control.xacro 定义了 6 个关节但这些关节在 Gazebo 模型中不存在，导致 gazebo_ros2_control 加载失败并级联导致 planar_move 插件报错无法运行。删除 ros2_control.xacro 后 planar_move 正常启动。
+2. **轮子高度修复**：轮子 joint origin 从 `-0.04` 改为 `-0.05`（wheel center at base_link.z - 0.05 = 0.04 = 轮半径，轮底刚好接触地面，不刮底盘）
+3. **底盘高度修复**：base_joint 从 0.03→0.09（base_link COM 抬高到底盘半高位置，避免碰撞箱拖地）
+4. **摩擦参数和运动参数**：mu1/mu2 降为 0.5，转弯速度/加速度降低
+
+### 待解决
+- ros2_control.xacro 保留在源码中但不再被 URDF 引用（关节定义存在但无效）
+- 运动仍一卡一卡的原因待进一步分析（planar_move 30Hz + 固定轮子 + 摩擦）
