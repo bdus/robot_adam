@@ -48,6 +48,17 @@ clean_processes() {
     sleep 2.0
 }
 
+# Resolve project root for hook invocation
+readonly _WOLF_HOOK="$(cd "$(dirname "$0")/../../../.." && pwd)/.wolf/hooks/verify-ros-clean.js"
+
+run_verify_hook() {
+    if [ -f "$_WOLF_HOOK" ]; then
+        node "$_WOLF_HOOK" <<'HOOK_EOF'
+{"tool":"Skill","input":{"skill":"ros-simulation-clean"}}
+HOOK_EOF
+    fi
+}
+
 check_port() {
     local port=${1:-11345}
     if ss -tlnp | grep -q ":$port "; then
@@ -75,9 +86,9 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
     NODE_LIST=$(ros2 node list 2>/dev/null | grep -v '^$')
 
     if [ -z "$NODE_LIST" ]; then
-        # No ROS2 nodes — but could still have a zombie gzserver blocking port
         check_port 11345 || exit 1
         echo "PASS: No residual ROS2 simulation nodes detected."
+        run_verify_hook
         exit 0
     fi
 
@@ -88,6 +99,7 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
     if [ -z "$SIM_NODES" ]; then
         check_port 11345 || exit 1
         echo "PASS: No residual simulation nodes detected (only core/system nodes remain)."
+        run_verify_hook
         exit 0
     fi
 
@@ -100,6 +112,7 @@ done
 
 # Final port check even on failure
 check_port 11345 || true
+run_verify_hook
 
 echo "FAIL: Simulation nodes remain after $MAX_RETRIES cleanup attempts."
 exit 1

@@ -11,8 +11,8 @@
     <xacro:include filename="$(find adam_description)/urdf/sensors/mono_camera.xacro"/>
 
     <!-- =============== 包含插件 =============== -->
-    <!-- 使用 diff_drive 四轮差速控制（替代 planar_move 的 teleport 顿挫问题） -->
-    <xacro:include filename="$(find adam_description)/urdf/plugins/gazebo_control_diff.xacro"/>
+    <!-- 使用 planar_move 插件（丝滑运动） -->
+    <xacro:include filename="$(find adam_description)/urdf/plugins/gazebo_control.xacro"/>
     <xacro:include filename="$(find adam_description)/urdf/plugins/gazebo_sensors.xacro"/>
 
     <!-- =============== 创建机器人 =============== -->
@@ -24,8 +24,8 @@
     <joint name="base_joint" type="fixed">
         <parent link="base_footprint"/>
         <child link="base_link"/>
-        <!-- COM 高度: 轮子半径(0.04) + 底盘半高(0.04) + 间隙 → 0.09 -->
-        <origin xyz="0 0 0.09" rpy="0 0 0"/>
+        <!-- 降低 COM 高度以提高转弯稳定性: 0.09 → 0.03 -->
+        <origin xyz="0 0 0.03" rpy="0 0 0"/>
     </joint>
 
     <link name="base_link">
@@ -52,8 +52,8 @@
 
     <gazebo reference="base_link">
         <material>Gazebo/Blue</material>
-        <mu1>0.8</mu1>
-        <mu2>0.8</mu2>
+        <mu1>0.5</mu1>
+        <mu2>0.5</mu2>
     </gazebo>
 
     <!-- =============== 四轮驱动（四个 continuous joint） =============== -->
@@ -77,17 +77,16 @@
         <xacro:cylinder_inertia m="0.1" r="0.04" h="0.032"/>
     </link>
 
-    <joint name="front_left_wheel_joint" type="continuous">
+    <joint name="front_left_wheel_joint" type="fixed">
         <parent link="base_link"/>
         <child link="front_left_wheel_link"/>
         <origin xyz="0.08 0.085 -0.05" rpy="0 0 0"/>
-        <axis xyz="0 1 0"/>
     </joint>
 
     <gazebo reference="front_left_wheel_link">
         <material>Gazebo/Black</material>
-        <mu1>1.0</mu1>
-        <mu2>1.0</mu2>
+        <mu1>0.5</mu1>
+        <mu2>0.5</mu2>
     </gazebo>
 
     <!-- 前右轮 (continuous joint for driving) -->
@@ -110,17 +109,16 @@
         <xacro:cylinder_inertia m="0.1" r="0.04" h="0.032"/>
     </link>
 
-    <joint name="front_right_wheel_joint" type="continuous">
+    <joint name="front_right_wheel_joint" type="fixed">
         <parent link="base_link"/>
         <child link="front_right_wheel_link"/>
         <origin xyz="0.08 -0.085 -0.05" rpy="0 0 0"/>
-        <axis xyz="0 1 0"/>
     </joint>
 
     <gazebo reference="front_right_wheel_link">
         <material>Gazebo/Black</material>
-        <mu1>1.0</mu1>
-        <mu2>1.0</mu2>
+        <mu1>0.5</mu1>
+        <mu2>0.5</mu2>
     </gazebo>
 
     <!-- 后左轮 (continuous joint for driving) -->
@@ -143,17 +141,16 @@
         <xacro:cylinder_inertia m="0.1" r="0.04" h="0.032"/>
     </link>
 
-    <joint name="rear_left_wheel_joint" type="continuous">
+    <joint name="rear_left_wheel_joint" type="fixed">
         <parent link="base_link"/>
         <child link="rear_left_wheel_link"/>
         <origin xyz="-0.08 0.085 -0.05" rpy="0 0 0"/>
-        <axis xyz="0 1 0"/>
     </joint>
 
     <gazebo reference="rear_left_wheel_link">
         <material>Gazebo/Black</material>
-        <mu1>1.0</mu1>
-        <mu2>1.0</mu2>
+        <mu1>0.5</mu1>
+        <mu2>0.5</mu2>
     </gazebo>
 
     <!-- 后右轮 (continuous joint for driving) -->
@@ -176,17 +173,16 @@
         <xacro:cylinder_inertia m="0.1" r="0.04" h="0.032"/>
     </link>
 
-    <joint name="rear_right_wheel_joint" type="continuous">
+    <joint name="rear_right_wheel_joint" type="fixed">
         <parent link="base_link"/>
         <child link="rear_right_wheel_link"/>
         <origin xyz="-0.08 -0.085 -0.05" rpy="0 0 0"/>
-        <axis xyz="0 1 0"/>
     </joint>
 
     <gazebo reference="rear_right_wheel_link">
         <material>Gazebo/Black</material>
-        <mu1>1.0</mu1>
-        <mu2>1.0</mu2>
+        <mu1>0.5</mu1>
+        <mu2>0.5</mu2>
     </gazebo>
 
     <!-- =============== 传感器安装 =============== -->

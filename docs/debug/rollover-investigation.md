@@ -82,6 +82,43 @@ ros2 topic echo /odom --once
 3. **底盘高度修复**：base_joint 从 0.03→0.09（base_link COM 抬高到底盘半高位置，避免碰撞箱拖地）
 4. **摩擦参数和运动参数**：mu1/mu2 降为 0.5，转弯速度/加速度降低
 
-### 待解决
+## 运动控制方案演进 (2026-06-27 后续)
+
+### 方案对比
+
+| | mid360 (当前 diff_drive) | laser (planar_move) |
+|---|---|---|
+| 控制插件 | `libgazebo_ros_diff_drive.so` | `libgazebo_ros_planar_move.so` |
+| 运动原理 | 物理引擎+摩擦驱动（后轮差速） | 直接位置插值（无视物理约束） |
+| 前轮 | 被动自由旋转 (continuous joint) | 固定 (fixed joint，视觉模型) |
+| 转向方式 | 靠地面摩擦差速转向 | 直接旋转 base_link |
+| 直走 | ✅ 正常 | ✅ 正常 |
+| 转向 | ❌ 困难（力矩不足） | ✅ 丝滑 |
+| 翻车风险 | 低（物理约束） | 高（COM高+加速度大） |
+
+### diff_drive 转向困难分析
+
+发送 `cmd_vel (linear.x=0.5, angular.z=-1)` 后：
+- ✅ 直走正常（有前进位移）
+- ❌ 转弯效果差（odom yaw 几乎不变，tf rotation y≈0）
+
+**根本原因**: diff_drive 只驱动 **2个后轮** 实现差速转向，前轮为 passive。当摩擦系数过大或 wheel_separation 不当时，转向力矩不足以克服惯性。
+
+当前参数：
+- `wheel_separation=0.17m` (正确值，0.085+0.085)
+- `wheel_diameter=0.08m` (正确值)
+- 后轮摩擦 mu=0.8，底盘摩擦 mu=0.5
+- 车轮质量惯性仅 0.1kg (可能偏小)
+
+### 最终方案：planar_move + 防翻车优化
+
+放弃 diff_drive，换回 planar_move，并解决之前翻车的 root cause：
+
+1. **降低 COM**: base_joint z=0.03m (已修改)
+2. **限制转弯加速度**: `max_vel_theta=0.6`, `max_accel_theta=0.3`
+3. **降低摩擦**: mu1/mu2=0.5 (减少侧向拖拽力)
+4. **轮子改为 fixed**: 四轮均为视觉模型 (与 laser 一致)
+
+**尚未解决的问题**
 - ros2_control.xacro 保留在源码中但不再被 URDF 引用（关节定义存在但无效）
 - 运动仍一卡一卡的原因待进一步分析（planar_move 30Hz + 固定轮子 + 摩擦）
