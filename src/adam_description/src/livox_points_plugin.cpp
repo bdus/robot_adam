@@ -71,8 +71,8 @@ namespace gazebo
 
         node = transport::NodePtr(new transport::Node());
         node->Init(raySensor->WorldName());
-        // PointCloud2 publisher
-        cloud2_pub = node_->create_publisher<sensor_msgs::msg::PointCloud2>(curr_scan_topic, 10);
+        // PointCloud2 publisher (separate topic to avoid type conflict)
+        cloud2_pub = node_->create_publisher<sensor_msgs::msg::PointCloud2>(curr_scan_topic + "/points", 10);
         // CustomMsg publisher
         custom_pub = node_->create_publisher<livox_ros_driver2::msg::CustomMsg>(curr_scan_topic, 10);
 

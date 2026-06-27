@@ -63,20 +63,6 @@ def generate_launch_description():
         actions=[spawn_entity_node]
     )
 
-    # 加载并激活关节状态广播器
-    load_joint_state_controller = launch.actions.ExecuteProcess(
-        cmd=['ros2', 'control', 'load_controller', '--set-state', 'active',
-             'adam_joint_state_broadcaster'],
-        output='screen'
-    )
-
-    load_controller_event = launch.actions.RegisterEventHandler(
-        event_handler=launch.event_handlers.OnProcessExit(
-            target_action=spawn_entity_node,
-            on_exit=[load_joint_state_controller]
-        )
-    )
-
     rviz_path = os.path.join(urdf_path, 'config', 'rviz', 'ackermann_mid360.rviz')
     rviz = launch_ros.actions.Node(
         package='rviz2',
@@ -98,6 +84,5 @@ def generate_launch_description():
         joint_state_publisher_node,
         launch_gazebo,
         delayed_spawn,
-        load_controller_event,
         rviz
     ])

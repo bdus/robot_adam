@@ -9,9 +9,9 @@ def generate_launch_description():
     use_rviz = launch.substitutions.LaunchConfiguration('rviz', default='false')
 
     # 获取默认路径
-    robot_name_in_model = "ackermann_laser"
+    robot_name_in_model = "diff_drive_mid360"
     urdf_path = get_package_share_directory('adam_description')
-    default_model_path = urdf_path + '/urdf/ackermann_laser.urdf.xacro'
+    default_model_path = urdf_path + '/urdf/diff_drive_mid360.urdf.xacro'
     default_world_path = urdf_path + '/world/bigH.world'
     use_sim_time = launch.substitutions.LaunchConfiguration('use_sim_time', default='true')
 
@@ -63,7 +63,7 @@ def generate_launch_description():
         actions=[spawn_entity_node]
     )
 
-    rviz_path = os.path.join(urdf_path, 'config', 'rviz', 'ackermann_laser.rviz')
+    rviz_path = os.path.join(urdf_path, 'config', 'rviz', 'ackermann_mid360.rviz')  # same rviz config
     rviz = launch_ros.actions.Node(
         package='rviz2',
         executable='rviz2',

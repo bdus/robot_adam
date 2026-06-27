@@ -40,12 +40,33 @@ robot_adam/
 
 | 参数 | 值 |
 |------|-----|
-| 底盘尺寸 | 240 x 140 x 80 mm |
+| 底盘尺寸 | 240 x 180 x 80 mm |
 | 前后轴距 | 160 mm |
-| 轮距 | 140 mm |
+| 轮距 | 180 mm |
 | 车轮半径 | 40 mm |
-| 最大转向角 | ±40° (0.7 弧度) |
 | 最大速度 | 1.0 m/s |
+| COM 高度 | 90 mm (低重心设计，防翻车) |
+
+### 运动控制
+
+使用 `diff_drive` 插件实现四轮差速驱动：
+- **后轮**: continuous 关节，由 diff_drive 物理驱动（左后+右后）
+- **前轮**: continuous 关节，自由旋转（不拖拽，减少阻力）
+- **里程计**: 50Hz 刷新率，输出 `/odom`
+
+支持的运动模式：
+- 前进/后退直行 (0.5 m/s 约 1.5-1.8m/3秒)
+- 左右转向
+- 原地旋转
+- 前进+转向组合运动
+- 无翻车：经过验证的极限指令 `linear.x=0.5, angular.z=-1.0` 可平稳前进右转，z≈0
+
+### 关键改进
+1. 四个车轮全部改为 `continuous` 关节（后轮驱动，前轮自由旋转）
+2. 车轮摩擦系数提升至 mu1=mu2=1.0（防止打滑）
+3. 车轮质量降至 0.1kg（减小惯量
+4. diff_drive 最大扭矩提升至 100Nm（确保充足驱动力）
+5. 更新 robot_base_frame 为 base_link（修复 odom TF 问题）
 
 ## 安装
 
@@ -54,9 +75,7 @@ robot_adam/
 ```bash
 # ROS2 基础依赖
 sudo apt install ros-humble-gazebo-ros*
-sudo apt install ros-humble-ackermann-steering-controller \
-    ros-humble-joint-state-broadcaster \
-    ros-humble-robot-state-publisher \
+sudo apt install ros-humble-robot-state-publisher \
     ros-humble-joint-state-publisher \
     ros-humble-rqt-tf-tree
 
@@ -97,7 +116,7 @@ ros2 launch adam_description gazebo_ackermann_mid360.launch.py rviz:=true
 
 ```bash
 # 发布速度命令
-ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.5}, angular: {z: 0.3}}"
+ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.5}, angular: {z: -1}}"
 
 # 停止机器人
 ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.0}, angular: {z: 0.0}}"
@@ -138,21 +157,14 @@ ros2 topic echo /imu/data --no-lost
 本项目设计时考虑了仿真与实车的统一性：
 
 1. **URDF 配置**: 仿真和实车使用相同的 URDF 文件
-2. **ROS2 Control**: 通过更改 `ros2_control` 中的 `hardware` 插件来切换仿真/实车
-3. **控制器**: 使用相同的 `ackermann_steering_controller` 配置
+2. **运动控制**: 使用 Gazebo `diff_drive` 插件进行仿真，实车可通过 ROS2 control 框架替换
 
 ### 实车配置
 
-在实车上使用时，需要修改 `urdf/plugins/ros2_control.xacro`:
-
-```xml
-<hardware>
-    <!-- 仿真 -->
-    <plugin>gazebo_ros2_control/GazeboSystem</plugin>
-    <!-- 实车 -->
-    <!-- <plugin>your_real_robot_driver/YourHardwareInterface</plugin> -->
-</hardware>
-```
+实车部署时需要：
+1. 将 URDF 中的 `gazebo_control_diff.xacro` 替换为 ros2_control 配置
+2. 实现自定义的 hardware 接口插件
+3. 使用 `ackermann_steering_controller` 或 `diff_drive_controller`
  
 ## RViz 可视化
 
@@ -167,6 +179,19 @@ rviz2 -d src/adam_description/config/rviz/ackermann_laser.rviz
 ```
 
  
+## 仿真清理
+
+仿真结束后，使用 ros-simulation-clean skill 清理残留节点和进程：
+
+```bash
+. .claude/skills/ros-simulation-clean/clean.sh
+```
+
+这会清理：
+- `/gazebo`, `/joint_state_publisher`, `/robot_state_publisher` 等仿真节点
+- Gazebo 相关进程
+- ROS daemon 缓存
+
 ## 许可证
 
 Apache License 2.0
