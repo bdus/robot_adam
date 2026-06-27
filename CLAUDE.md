@@ -18,7 +18,7 @@ source install/setup.bash
 
 #### 3D激光雷达(Mid360) 版本
 ```bash
-ros2 launch adam_description gazebo_ackermann_mid360.launch.py
+ros2 launch adam_description gazebo_planar_mid360.launch.py
 ```
 
 #### 2D 激光版本

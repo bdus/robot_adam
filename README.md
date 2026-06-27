@@ -99,7 +99,7 @@ source install/setup.bash
 
 #### 3D激光雷达(Mid360) 版本
 ```bash
-ros2 launch adam_description gazebo_ackermann_mid360.launch.py
+ros2 launch adam_description gazebo_planar_mid360.launch.py
 ```
 
 #### 2D 激光版本
@@ -109,7 +109,7 @@ ros2 launch adam_description gazebo_ackermann_laser.launch.py
 
 #### 使用 RViz 可视化
 ```bash
-ros2 launch adam_description gazebo_ackermann_mid360.launch.py rviz:=true
+ros2 launch adam_description gazebo_planar_mid360.launch.py rviz:=true
 ```
 
 ### 控制机器人

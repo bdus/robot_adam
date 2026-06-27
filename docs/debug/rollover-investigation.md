@@ -57,7 +57,7 @@ colcon build --packages-select adam_description
 
 # 启动
 source install/setup.bash
-ros2 launch adam_description gazebo_ackermann_mid360.launch.py
+ros2 launch adam_description gazebo_planar_mid360.launch.py
 
 # 测试各种运动（在另一个终端）
 ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.5}, angular: {z: -1.0}}"  # 右转
