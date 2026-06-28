@@ -1,8 +1,8 @@
 # 3D 空间几何与时空立体避障详细规格说明书 (SPEC 03_3D_Spatial)
 
-> **版本**: v1.0 | **日期**: 2026-06-28 | **状态**: Working
+> **版本**: v1.1 | **日期**: 2026-06-28 | **状态**: Working
 > **存放目录**: `docs/superpowers/specs/robot_adam_navigation_specs/03_3d_spatial_and_stvl.md`
-> **范围**：FAST-LIO2 编译与参数对齐 + Level 2 全局 EKF 退化保护机制 + `pointcloud_to_laserscan` 高度切片 + Nav2 STVL (时空体素层) 动态残影消除。
+> **范围**：FAST-LIO2 编译与参数对齐 + Level 2 全局 EKF 退化保护机制 + `pointcloud_to_laserscan` 高度切片（仅用于Global Planner） + Nav2 STVL (时空体素层) 用于Local Costmap 的动态残影消除。
 > **关联总设计**：[`docs/spec/01_robot_adam_navigation_architecture.md`](../../../spec/01_robot_adam_navigation_architecture.md) — 本系列宏观架构纲领。
 > **前置依赖**：`SPEC 01`（宏观架构），`SPEC 02`（2D 激光与常驻 EKF 已通）。Level 1 仿真底盘已挂载固态雷达 Livox Mid360。
 > **总工期预估**：3 天 | **原子交付单元数**：3
@@ -66,7 +66,20 @@ lio:
 
 **功能描述**：防止 3D 全局寻路对全局 3D 点云进行实时 A* 搜索而导致算力崩盘。将 Mid360 稠密点云在底盘上方特定垂直高度区间进行水平截取，降维投影为 2D 伪激光，作为 Nav2 全局路径规划的安全边界。
 
+**为什么需要 pointcloud_to_laserscan 与 STVL 共存**：
+虽然 STVL 3D 时空体素网格能够提供局部避障的时空残影记忆，但在工业落地场景中，Global Costmap 依然需要 pointcloud_to_laserscan 作为轻量级实时输入，原因有三：
+
+1. **解决"全局规划器看不到实时动态障碍物"的算力灾难**：
+   Global Costmap 需要实时感知动态障碍物（如行人、移动的箱子）以避免长期路线被堵死。直接使用原始 3D 点云会导致算力崩盘，而 pointcloud_to_laserscan 通过高度切片产生的轻量级伪激光话题（数据量相当于传统 2D 雷达），能够以极低算力高频更新 Global Costmap，确保动态障碍物能被及时纳入全局规划。
+
+2. **STVL 的时空衰减机制不适合用于全局导航**：
+   STVL 的核心优势在于其时空残影消散机制（ voxel_decay: 1.0 秒自动消失），这对于局部避障是理想的，但灾难性地不适合全局规划。全局规划器需要障碍物在静态地图上长期存在，除非明确观测到消失否则不能自行清除。若将 STVL 用于 Global Costmap，机器人转头时 10 米外的障碍物会因时空衰减而消失，导致全局规划器误判路径畅通而规划撞墙轨迹。
+
+3. **真车颠簸与地面"噪点陷阱"（工业落地的最痛点）**：
+   真车行驶中底盘俯仰抖动会导致雷达束频繁扫到地面，若未过滤则地面噪点会被误认为障碍物。height slice (min_height=0.10, max_height=0.40) 作为物理防火墙，可过滤掉低于 10cm 的地面噪点（如电线、厚地毯）和因车身俯仰带来的虚假障碍，确保投影出的伪激光仅包含真正需要规避的硬核障碍物。
+
 **切片硬性规格**：
+**重要说明**：高度切片范围 (min_height=0.10m, max_height=0.40m) 仅用于 **全局规划器（Global Planner）**。在局部代价图（Local Costmap）中，必须保留全量或更大范围的 3D STVL 体素网格输入，依靠 MPPI 控制器在前向 56 步的时空推演中实施强行刹车或绕行。
 
 - **输入**：`/livox/lidar_pc2`（标准 `sensor_msgs/msg/PointCloud2`）。
 - **输出**：`/scan_3d_projected`（`sensor_msgs/msg/LaserScan`）。
@@ -83,8 +96,13 @@ lio:
 
 **功能描述**：解决传统 2D 栅格障碍物层无法表达悬空物体（如倾斜桌腿、桌面上悬空的显示器），以及动态行人走过留下"永久残影导致小车死锁"的痛点。
 
+**架构设计**：
+- **全局代价图（Global Costmap）**：使用传统的 `obstacle_layer`，输入源为 `pointcloud_to_laserscan` 生成的 `/scan_3d_projected` 话题。这是为了确保全局规划器能够实时感知动态障碍物而不受时空衰减影响。
+- **局部代价图（Local Costmap）**：卸载旧的 `obstacle_layer`，挂载 `spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer`，以获得时空体素的动态残影消散能力，专门用于处理悬空物体等 2D 雷达盲区。
+
 **架构配置 (`nav2_stvl_config.yaml`)**：
-在 Nav2 的 `local_costmap` 和 `global_costmap` 的 `plugins` 中，卸载旧的 `obstacle_layer`，挂载 `spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer`。
+在 Nav2 的 `local_costmap` 的 `plugins` 中，卸载旧的 `obstacle_layer`，挂载 `spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer`。
+（Global Costmap 保持使用标准 `obstacle_layer`，输入为 `/scan_3d_projected`）
 
 **核心参数锁死**：
 ```yaml
