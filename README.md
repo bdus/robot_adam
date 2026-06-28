@@ -4,4 +4,4 @@
 
 ## 详细文档
 
-- [仿真机器人描述包使用说明](./simulation/robot_description/README.md) - 包含6种驱动方式(2WD/4WD/Omni × Mid360/Laser)的详细启动和使用方法
+- [仿真机器人描述包使用说明](./src/simulation/README.md) - 包含6种驱动方式(2WD/4WD/Omni × Mid360/Laser)的详细启动和使用方法
