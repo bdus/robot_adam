@@ -1,0 +1,48 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <!-- 2WD 差速控制器（后两轮驱动） -->
+    <xacro:macro name="diff_drive_2wd">
+
+        <gazebo>
+            <plugin name="diff_drive_2wd" filename="libgazebo_ros_diff_drive.so">
+
+                <ros>
+                    <namespace>/</namespace>
+                    <remapping>cmd_vel:=/cmd_vel</remapping>
+                    <remapping>odom:=/odom</remapping>
+                </ros>
+
+                <update_rate>100</update_rate>
+                <publish_rate>10</publish_rate>
+
+                <odometry_frame>odom</odometry_frame>
+                <robot_base_frame>base_link</robot_base_frame>
+                <publish_odom>true</publish_odom>
+                <publish_odom_tf>true</publish_odom_tf>
+                <publish_wheel_tf>false</publish_wheel_tf>
+                <publishWheelJointState>false</publishWheelJointState>
+
+                <covariance_x>0.0001</covariance_x>
+                <covariance_y>0.0001</covariance_y>
+                <covariance_yaw>0.01</covariance_yaw>
+
+                <!-- 后轮驱动 -->
+                <left_joint>rear_left_wheel_joint</left_joint>
+                <right_joint>rear_right_wheel_joint</right_joint>
+
+                <wheel_separation>0.17</wheel_separation>
+                <wheel_diameter>0.08</wheel_diameter>
+
+                <max_wheel_torque>100</max_wheel_torque>
+                <max_wheel_acceleration>1.0</max_wheel_acceleration>
+
+                <command_topic>cmd_vel</command_topic>
+                <odometry_source>1</odometry_source>
+
+            </plugin>
+        </gazebo>
+
+    </xacro:macro>
+
+</robot>

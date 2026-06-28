@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <xacro:include filename="$(find robot_description)/urdf/common/common_inertia.xacro"/>
+
+    <!-- 2WD 前轮万向轮（球体方案，mu=0.01 极低摩擦） -->
+    <xacro:macro name="caster_wheel" params="
+        side pos_x pos_y pos_z
+        sphere_radius:=0.04 mass:=0.01 mu:=0.01">
+
+        <xacro:property name="caster_name" value="${side}_caster_wheel" />
+
+        <link name="${caster_name}_link">
+            <visual>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <sphere radius="${sphere_radius}"/>
+                </geometry>
+                <material name="caster_material">
+                    <color rgba="0.3 0.3 0.3 1.0"/>
+                </material>
+            </visual>
+            <collision>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <sphere radius="${sphere_radius}"/>
+                </geometry>
+            </collision>
+            <xacro:sphere_inertia m="${mass}" r="${sphere_radius}"/>
+        </link>
+
+        <joint name="${caster_name}_joint" type="fixed">
+            <parent link="base_link"/>
+            <child link="${caster_name}_link"/>
+            <origin xyz="${pos_x} ${pos_y} ${pos_z}" rpy="0 0 0"/>
+        </joint>
+
+        <gazebo reference="${caster_name}_link">
+            <material>Gazebo/Black</material>
+            <mu1>${mu}</mu1>
+            <mu2>${mu}</mu2>
+        </gazebo>
+
+    </xacro:macro>
+
+</robot>

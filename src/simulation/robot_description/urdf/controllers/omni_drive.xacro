@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <!-- Omni 全向移动控制器（planar_move 插件） -->
+    <!-- 里程计发布到 wheel_odom，避免与 diff_drive 的 /odom 冲突 -->
+    <xacro:macro name="omni_drive">
+
+        <gazebo>
+            <plugin name="planar_move" filename="libgazebo_ros_planar_move.so">
+
+                <ros>
+                    <namespace>/</namespace>
+                    <remapping>cmd_vel:=/cmd_vel</remapping>
+                    <remapping>odom:=/wheel_odom</remapping>
+                </ros>
+
+                <update_rate>100</update_rate>
+
+                <odometry_frame>odom</odometry_frame>
+                <robot_base_frame>base_footprint</robot_base_frame>
+                <publish_odom>true</publish_odom>
+                <publish_odom_tf>false</publish_odom_tf>
+
+                <max_vel_x>0.8</max_vel_x>
+                <max_vel_y>0.8</max_vel_y>
+                <max_vel_theta>0.6</max_vel_theta>
+
+                <max_accel_x>0.4</max_accel_x>
+                <max_accel_y>0.4</max_accel_y>
+                <max_accel_theta>0.3</max_accel_theta>
+
+            </plugin>
+        </gazebo>
+
+    </xacro:macro>
+
+</robot>
