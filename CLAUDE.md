@@ -16,12 +16,4 @@ source install/setup.bash
 
 ### 启动 Gazebo 仿真
 
-#### 3D激光雷达(Mid360) 版本
-```bash
-ros2 launch adam_description gazebo_planar_mid360.launch.py
-```
-
-#### 2D 激光版本
-```bash
-ros2 launch adam_description gazebo_ackermann_laser.launch.py
-```
+详细的启动方法请参考：[仿真机器人描述包使用说明](.src/simulation/README.md)
