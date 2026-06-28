@@ -47,7 +47,10 @@ adam_assets/
 **接口与路由规范**：
 
 - `CMakeLists.txt` 必须包含：`install(DIRECTORY share/ DESTINATION share/${PROJECT_NAME})`。
-- 提供一个 Python 工具函数 `get_asset_path(asset_type, file_name)`，通过 `ament_index_python.packages.get_package_share_directory('adam_assets')` 动态拼接返回非结构化资产的绝对路径。
+- 提供一个 Python 工具函数 `get_asset_path(asset_type, file_name)`，实现**两级优先查找**逻辑：
+  1. **运行时缓存区优先**：检查 `~/.ros/adam_assets/{asset_type}/{file_name}` 是否存在。若存在，直接返回该路径（运行时落盘的地图、拓扑字典等动态资产优先使用）。
+  2. **编译时静态区回退**：若缓存区无此文件，回退到 `ament_index_python.packages.get_package_share_directory('adam_assets')` 拼接的 `share/{asset_type}/{file_name}` 路径（出厂自带的静态资产）。
+- 这一设计确保：运行时动态生成的地图文件写入缓存区即可被读取，**完全无需在真车运行中触发 `colcon build` 重编译**。
 
 **通关标准**：
 
@@ -71,10 +74,36 @@ adam_assets/
 - **输入话题**：Level 1 底盘发布的原始编码器里程计 `/odom_raw`（包含 `geometry_msgs/msg/TwistWithCovariance`）与高频物理惯导 `/imu/data`。
 - **输出 TF**：启动常驻的 `local_ekf_node`，**唯一广播** `odom -> base_link` 的 TF 树。其 `publish_tf` 强制为 `true`。
 
+**白盒边界说明（关键架构约束）**：
+
+> **`odom -> base_link` 是 Level 2 的输出，不是 Level 3 SLAM 的输出！**
+>
+> 所有 SLAM 算法（Cartographer、FAST-LIO2、ORB-SLAM3、DROID-SLAM）在数学层面确实计算了"相对于里程计起点的相对位姿"，数值上等价于 `odom -> base_link` 的空间变换。但**绝对禁止让 SLAM 节点直接广播此 TF**。原因有三：
+> 1. **多算法冲突**：系统同时运行 2D/3D 激光、视觉等多路 SLAM，若各算法都发自己的 `odom -> base_link`，TF 树崩溃。
+> 2. **运控断流风险**：SLAM 计算量大，遇到空旷/剧烈晃动时丢帧降频，若 Nav2 MPPI 控制器（50Hz+）直接吃 SLAM 的 TF，会引发急刹失控。
+> 3. **累计漂移不可避免**：单靠 SLAM 的局部里程计盲推，走久必漂，必须靠 Global EKF 定期用绝对位姿修正。
+>
+> **正确分工**：SLAM 算法 = 纯数学解算器，只发 Topic（如 `/cartographer_pose`）；`local_ekf_node` = 独裁广播器，唯一发布 `odom -> base_link` TF。
+
 **数据分流与降级硬性规格**：
 
 - 启动第二层 `global_ekf_node`，负责广播 `map -> odom` 的 TF。
 - **2D 阶段降级策略**：本期由于没有 3D/视觉的高精位姿源，`global_ekf_node` 接收来自 Unit 5 的 `/cartographer_pose` 话题作为全局观测源。当小车运动平稳时，以 Cartographer 为高权重修正 `map -> odom` 漂移；一旦 Cartographer 报告匹配低置信度（如处于完全无几何特征的空旷地带），`global_ekf_node` 通过其门限过滤器（Mahalanobis Distance）自动降低其权重，完全依靠底层平滑的 `odom -> base_link` 维持小车姿态，绝不断流或阶跃。
+
+**Slow-Fast 异步双环解耦控制机制（核心架构规范）**：
+
+系统必须严格按照以下"高低频异步打补丁"逻辑运行，将"实时运控安全防线"和"算法精度上限"进行物理隔离：
+
+1. **Fast 环（Level 2 常驻地基）**：`local_ekf_node` 必须以 **≥50Hz** 的绝对高频，**独占并广播** `odom -> base_link` 的 TF 树。其唯一输入为绝对不断流的硬件底盘轮速计与高频物理 IMU。底盘运控（Nav2 MPPI）永远只依赖此 TF，它绝不受上层算法卡顿的影响。
+
+2. **Slow 环（Level 3 算法层）**：Cartographer、FAST-LIO2、ORB-SLAM3 等算法作为**纯粹的数学解算器**，运行在 10Hz~30Hz 的低频异步线程中。它们必须关闭 `publish_tf` / `provide_odom_frame`，仅以普通 ROS2 Topic 形式异步发布其观测位姿报告（例如 `/cartographer_pose`）。
+
+3. **异步补丁更新（Global EKF 交汇）**：全系统内，**只有 `global_ekf_node` 有权广播 `map -> odom` TF**。其工作原理：
+   - 在收到 Level 3 算法 Topic 更新前，`global_ekf_node` 维持当前 `map -> odom` 矩阵不变。顶层全局位姿 $map \to base\_link = (map \to odom) \times (odom \to base\_link)$ 随 Fast 环高频丝滑变动。
+   - 当 Slow 环算法经过几十毫秒密集计算，发布一帧高精度低协方差观测 Topic 时，`global_ekf_node` 触发回调，**瞬间计算并更新 `map -> odom` 的偏置量**（轻补丁，不影响运控）。
+   - 若 Level 3 断流：`global_ekf_node` 无限期锁死并维持最后一帧有效的 `map -> odom`，底盘完全依靠 `local_ekf` 的惯性推演续命。
+
+> **工业隐喻**：小车闭眼跑步（Fast 环，步频极快），隔几步睁眼看一下路标（Slow 环），发现跑偏了就把心里的"参照物地图"整体挪一下（修正 `map -> odom`），但脚下跑步动作绝不踩刹车。
 
 **参数约束（硬性规格）**：
 
@@ -135,9 +164,10 @@ explore_lite:
 **归档自动化脚本 (`archive_map.py`)**：
 
 - 脚本接收落盘 Service 信号 → 动态调用 Cartographer 的标准服务 `/write_state`。
-- 算法先将地图文件（`.pbstream`, `.yaml`, `.pgm`）写出到系统高权限临时区 `/tmp/adam_maps/`。
-- 脚本利用 OS 级标准库，将文件拷贝搬运至本地 Workspace 的源码路径 `src/3.navigation_ai/adam_assets/share/maps_2d/` 与 `maps_3d/`。
-- 脚本在后台静默异步执行系统级编译指令：`colcon build --packages-select adam_assets`。
+- 算法先将地图文件（`.pbstream`, `.yaml`, `.pgm`）写出到系统高权限临时区 `/tmp/adam_maps/{timestamp}/`。
+- 脚本利用 OS 级标准库，将文件拷贝搬运至 `~/.ros/adam_assets/maps_2d/` 与 `maps_3d/`（即 `get_asset_path()` 的运行时缓存区）。
+- **不触发任何 `colcon build` 重编译** — 运行时落盘的地图直接由缓存区读取，零编译开销。
+- 若希望将地图固化到源码（例如用于版本管理），提供可选的手动命令：`archive_map.py --commit`，将缓存区文件同步至 `src/3.navigation_ai/adam_assets/share/` 并执行单次 `colcon build --packages-select adam_assets`，该操作仅在关机维护时由人工触发。
 
 **归档流程**：
 ```
@@ -147,16 +177,13 @@ explore_lite:
 调用 Cartographer /write_state 服务 → 写入 /tmp/adam_maps/{timestamp}/
         │
         ▼
-脚本拷贝文件至 src/3.navigation_ai/adam_assets/share/maps_2d/
+脚本拷贝文件至 ~/.ros/adam_assets/maps_2d/（运行时缓存区）
         │
         ▼
-后台静默执行 colcon build --packages-select adam_assets
-        │
-        ▼
-验证 install/share/adam_assets/maps_2d/ 下文件就绪
+get_asset_path() 下一帧自动命中缓存区，零延迟生效
 ```
 
-**通关效果**：刷新 `install/share/` 路径，使二次开机时系统能无缝路由读取新地图，完成非结构化资源闭环。
+**通关效果**：运行时地图落盘后，`get_asset_path('maps_2d', 'xxx.pbstream')` 下一帧自动从 `~/.ros/adam_assets/` 返回新路径。系统零编译、零重启即可路由读取新地图，完成非结构化资源闭环。
 
 ---
 
@@ -291,8 +318,8 @@ ClearCostmapRecovery (清除局部代价图残影)
 **验收方案与标准（Gate 4）**：
 
 1. **落盘完整性验证**：检查系统的 `/tmp/adam_maps/` 目录，必须包含完好的、带统一时间戳后缀的 `.yaml`（栅格配置文件）、`.pgm`（占用概率图像）和 `.pbstream`（Cartographer 序列化地图状态）三件套。
-2. **源码仓库自动刷新验证**：静待数秒，检查本地 Workspace 源码路径 `src/3.navigation_ai/adam_assets/share/maps_2d/` 下，必须已经静默同步拷入了上述新生成的地图文件。
-3. **通关铁律**：后台异步编译进程完成后，执行 `ros2 asset` 或检查 `install/` 目录，**新地图文件必须以 100% 的确定性被打包部署进 ROS2 静态运行沙盒内，系统无需二次手动 colcon build 即可被其他节点加载**。
+2. **缓存区自动同步验证**：静待数秒，检查 `~/.ros/adam_assets/maps_2d/` 下，必须已经静默同步拷入了上述新生成的地图文件。
+3. **通关铁律**：归档完成后，在同一终端（不重启任何节点）执行 `get_asset_path('maps_2d', 'xxx.pbstream')`，**必须立即返回 `~/.ros/adam_assets/maps_2d/` 下的新地图路径**。系统零编译、零重启即可路由读取新地图，无 CPU 飙高风险。
 
 ---
 

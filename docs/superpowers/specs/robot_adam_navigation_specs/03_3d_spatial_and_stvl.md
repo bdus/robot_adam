@@ -35,7 +35,7 @@
 
 **Level 2 终极 EKF 退化分流硬性规格**：
 
-- `local_ekf_node` 继续常驻融合轮速计与物理 IMU，发布稳定的 `odom -> base_link` TF。
+- `local_ekf_node` 继续常驻融合轮速计与物理 IMU，发布稳定的 `odom -> base_link` TF。**重要**：`odom -> base_link` 是 Level 2 的输出，不是 FAST-LIO2 的输出。FAST-LIO2 在数学上计算了"雷达相对于里程计起点的相对位姿"，但**禁止让它广播 `odom -> base_link` TF**。因为 SLAM 算法计算量大、遇到空旷/剧烈晃动会丢帧降频，若 Nav2 MPPI 直接吃 SLAM 的 TF 会引发急刹失控。正确分工：FAST-LIO2 = 纯 Topic 输出（`/fast_lio_odom`），`local_ekf_node` = 独裁广播器，唯一发布 `odom -> base_link` TF，确保运控 50Hz+ 绝对不断流。
 - `global_ekf_node` 接收 `/fast_lio_odom` 作为绝对位姿观测源，发布 `map -> odom` TF。
 
 **降级硬性逻辑**：写一个轻量级监控节点 `odom_health_monitor`。实时订阅 `/fast_lio_odom`，提取其 `pose.covariance` 矩阵对角线元素（特别是 X, Y, Z 轴方差）。当方差均 ≤0.05 时，Global EKF 100% 信任 Fast-LIO2；一旦方差突变（≥0.5 或收到非数 NaN），监控节点通过服务或动态参数降低 Global EKF 中该位姿源的权重，将整车运控降级切换至底层常驻的轮速里程计，防止整车漂移撞墙。

@@ -111,6 +111,20 @@ droid_slam:
 - 扩展并升级 `global_ekf_node`。输入源扩展为：`[底层常驻轮速+IMU EKF (Local)]`、`[3D FAST-LIO2 (Lidar)]`、`[ORB-SLAM3 (Vision)]`、`[DROID-SLAM (Neural)]`。
 - **断流续命硬核逻辑**：Global EKF 建立多通道卡方检验（Chi-Square Test）马氏距离门限过滤器。当视觉源（ORB-SLAM3/DROID-SLAM）由于环境光照突变导致 Tracking Lost 或协方差对角线元素跃迁（>1.0）时，全局 EKF 必须在单帧回调周期内（≤10 毫秒）将该视觉源的观测权重归零（拒绝合流），位置基准完全由常驻的 3D 雷达或底层 Local EKF 承托。
 
+**传感器恢复时的协方差膨胀衰减机制（防重定位瞬间阶跃）**：
+
+> 当视觉（ORB-SLAM3）或雷达（FAST-LIO2）从致盲状态恢复、"重定位/回环成功"的瞬间，高精度的绝对观测值若强行注入 Global EKF，会导致 `map -> odom` 发生剧烈阶跃（位姿跳变），进而引发 Nav2 代价图瞬间位移和小车急刹。
+
+修正方案：在 `odom_health_monitor` 中实现协方差渐进衰减：
+
+- **恢复初期**：传感器从 Lost 恢复后，强制将其协方差初始值膨胀到一个较大值（如对角线设为 0.5）。
+- **渐进信任**：在接下来的 N 帧（如 20 帧，约 1 秒 @ 20Hz）内，协方差按指数衰减模型从 0.5 逐步降至正常值 0.01：
+  ```
+  cov(t) = cov_final + (cov_init - cov_final) * exp(-λ * t)
+  其中 λ = ln(10) / N（10 帧内衰减到 10%）
+  ```
+- **效果**：使恢复后的高精度绝对观测以渐进、丝滑的方式修正进 Global EKF，`map -> odom` 不发生突变，Nav2 `/cmd_vel` 零顿挫。
+
 **多源断流续命退化降级状态机**：
 ```
 正常状态：global_ekf_node 融合 [FAST-LIO2 + ORB-SLAM3 + DROID-SLAM + 轮速计]
