@@ -1,72 +1,56 @@
 # 基础设施与 2D 几何导航栈详细规格说明书 (SPEC 02_Infra_2D)
 
-> 版本: v1.0 | 日期: 2026-06-28 | 状态: Working
-> 范围：adam_assets 资产包骨架 + 基础 EKF 里程计 + Cartographer 2D 建图/定位 + explore_lite 自主探索 + Nav2 运控
-> 前置依赖：SPEC 01（宏观架构），robot_description（6 种底盘变体已完成）
-> 总工期预估：~4 天 | 原子单元数：6
+> **版本**: v1.2 | **日期**: 2026-06-28 | **状态**: Working
+> **存放目录**: `docs/superpowers/specs/robot_adam_navigation_specs/02_infra_and_2d_geometry.md`
+> **范围**：`adam_assets` 资产包骨架 + 基础双层 EKF 里程计 + Cartographer 2D 建图/纯定位 + `explore_lite` 自主探索 + Nav2 Smac/MPPI 运控级集成。
+> **关联总设计**：[`docs/spec/01_robot_adam_navigation_architecture.md`](../../../spec/01_robot_adam_navigation_architecture.md) — 本系列宏观架构纲领。
+> **前置依赖**：`SPEC 01`（宏观架构），`robot_description`（Level 1 仿真底盘变体及传感器话题已就绪）。
+> **总工期预估**：4 天 | **原子交付单元数**：6
 
 ---
 
-## 1. 范围与边界
+## 1. 本期范围与边界 (Scope & Boundary)
 
-### 1.1 本期目标
+### 1.1 本期开发目标
 
-在 Gazebo 仿真环境中，彻底跑通"常驻底盘 → 自动探索建图 → 地图序列化落盘至 adam_assets → 二次开机一帧重定位 → Nav2 运控"的扫地机核心闭环。
+在 Gazebo 仿真环境（或真车常驻物理层）中，彻底跑通"常驻基础里程计 → 自主边界探索建图 → 地图异步归档至静态包 → 二次开机一帧无感全局重定位 → Nav2 路径规划与高频避障运控"的完整 2D 黄金闭环。
 
-### 1.2 本期不包含
+### 1.2 本期严格不包含
 
-以下内容属于后续 SPEC，本期**不实现**：
-- 3D 激光雷达 FAST-LIO2 与 STVL 时空避障（SPEC 03）
-- 视觉 SLAM ORB-SLAM3 / DROID-SLAM（SPEC 04）
-- 中枢 Lifecycle 状态机、VLN 大模型决策（SPEC 05）
+以下高级内容属于后续演进 SPEC，本期**不进行任何代码编写与接口预留**：
 
-### 1.3 输入依赖
-
-| 依赖 | 来源 | 状态 |
-|------|------|------|
-| Gazebo 仿真环境 + 2D 激光雷达 `/scan` | robot_description | ✅ 已完成 |
-| 底盘 `/odom`（轮速里程计） | robot_description / Gazebo | ✅ 已完成 |
-| IMU `/imu/data` | robot_description | ✅ 已完成 |
-| `bigH.world` 仿真场景 | robot_description | ✅ 已完成 |
-| 2WD/4WD/Omni 差速底盘控制 | robot_description | ✅ 已完成 |
+- 3D 固态激光雷达紧耦合（FAST-LIO2）与 Nav2 STVL 时空体素层（SPEC 03）。
+- 传统特征点视觉 VIO（ORB-SLAM3）与神经网络稠密 SLAM（SPEC 04）。
+- 顶层控制中枢 Lifecycle 状态机逻辑管理、大模型具身语义层（SPEC 05）。
 
 ---
 
-## 2. 原子单元拆解
+## 2. 最小原子交付单元拆解 (Sub-Agent Units)
 
-本期拆解为 6 个最小可交付单元（Unit），每个单元可由 Sub-Agent 在 0.5~1 天内独立开发。
+本期任务聚焦于将 Top-Down 蓝图化解为 6 个不带外部依赖、可单点突破和进行单元测试的"最小可执行单元"：
 
-### 📦 Unit 1: adam_assets 静态资源仓库
+### 📦 Unit 1: adam_assets 集中式静态资源仓库搭建
 
-**功能描述**：建立全局非结构化资产的动态索引路由，解决各个 SLAM 算法生成地图后路径硬编码问题。
+**功能描述**：建立全局非结构化资产（地图、校准文件）的统一放置规范，利用 ROS2 编译路由解决多算法读写路径硬编码的顽疾。
 
-**输入依赖**：无。
-
-**产出物**：
-- 标准 ROS2 静态资产包，包含 `camera_calibration/`, `maps_2d/`, `maps_3d/` 子目录
-- `CMakeLists.txt`：利用 `install(DIRECTORY ...)` 将资产安装至 ROS2 `share` 空间
-- `package.xml`：声明为标准的 `ament_cmake` 包
-- Python 资产解析器工具函数 `get_asset_path(sub_folder, file_name)`
-
-**目录结构**：
+**物理目录结构**：
 ```
 adam_assets/
-├── camera_calibration/
-│   ├── sim_camera_intrinsics.yaml      # 仿真相机内参（占位）
-│   └── real_camera_intrinsics.yaml     # 真实相机内参（占位）
-├── maps_2d/
-│   └── .gitkeep                        # 初始为空，建图后填充
-├── maps_3d/
-│   └── .gitkeep
-├── maps_vision/
-│   └── .gitkeep
-├── maps_semantic/
-│   └── .gitkeep
-├── CMakeLists.txt                      # install(DIRECTORY ...) 分发资产
-└── package.xml
+├── CMakeLists.txt
+├── package.xml
+└── share/
+    ├── camera_calibration/     # 留空（预留给 SPEC 04）
+    ├── maps_2d/               # 存放本期生成的 .yaml 与 .pgm 栅格地图
+    └── maps_3d/               # 存放本期生成的 Cartographer .pbstream 序列化子图
 ```
 
+**接口与路由规范**：
+
+- `CMakeLists.txt` 必须包含：`install(DIRECTORY share/ DESTINATION share/${PROJECT_NAME})`。
+- 提供一个 Python 工具函数 `get_asset_path(asset_type, file_name)`，通过 `ament_index_python.packages.get_package_share_directory('adam_assets')` 动态拼接返回非结构化资产的绝对路径。
+
 **通关标准**：
+
 1. 执行 `colcon build --packages-select adam_assets` 编译通过
 2. 在任意 Python 终端执行：
    ```python
@@ -78,67 +62,44 @@ adam_assets/
 
 ---
 
-### 📦 Unit 2: 基础里程计底座 EKF
+### 📦 Unit 2: adam_localization 基础里程计底座 (核心 Odom 锁死)
 
-**功能描述**：融合底盘轮速里程计 `/odom_raw` 与高频 IMU `/imu/data`，消除物理层打滑产生的随机误差，发布平滑的 `odom -> base_link` TF 树。
+**功能描述**：作为开机常驻的"死忠层"，通过扩展卡尔曼滤波（EKF）融合底盘原始轮速与高频 IMU，消除车轮打滑产生的阶跃误差，为上层 SLAM 提供高频平滑位姿先验。
 
-**输入依赖**：`robot_description` 发布的 `/odom_raw`（原始轮速里程计，≥50Hz 编码器解算，包含 `Twist` 速度和累计 `Pose`）与 `/imu/data`（高频 IMU 话题）。
+**数据流拓扑与输入输出**：
 
-**数据流动拓扑**：
-```
-底盘 MCU 编码器 → /odom_raw (Twist+Pose, ≥50Hz)
-                              ↓
-IMU 传感器       → /imu/data (angular_velocity + linear_acceleration)
-                              ↓
-                    local_ekf_node (robot_localization)
-                              ↓
-              发布唯一 odom → base_link TF (≥50Hz, 绝对连续)
-```
+- **输入话题**：Level 1 底盘发布的原始编码器里程计 `/odom_raw`（包含 `geometry_msgs/msg/TwistWithCovariance`）与高频物理惯导 `/imu/data`。
+- **输出 TF**：启动常驻的 `local_ekf_node`，**唯一广播** `odom -> base_link` 的 TF 树。其 `publish_tf` 强制为 `true`。
+
+**数据分流与降级硬性规格**：
+
+- 启动第二层 `global_ekf_node`，负责广播 `map -> odom` 的 TF。
+- **2D 阶段降级策略**：本期由于没有 3D/视觉的高精位姿源，`global_ekf_node` 接收来自 Unit 5 的 `/cartographer_pose` 话题作为全局观测源。当小车运动平稳时，以 Cartographer 为高权重修正 `map -> odom` 漂移；一旦 Cartographer 报告匹配低置信度（如处于完全无几何特征的空旷地带），`global_ekf_node` 通过其门限过滤器（Mahalanobis Distance）自动降低其权重，完全依靠底层平滑的 `odom -> base_link` 维持小车姿态，绝不断流或阶跃。
 
 **参数约束（硬性规格）**：
+
 - `ekf_local.yaml` 中，轮速计配置 `odom0_config`：融合 `Pose (x, y)` 和 `Twist (angular_z)`，共 3 自由度
 - IMU 配置 `imu0_config`：融合 `angular_velocity (z)` 和 `linear_acceleration (x, y)`，提供高频姿态阻尼
-- **必须关闭任何 SLAM 节点的直接 TF 广播**：Cartographer 的 `provide_odom_frame` 必须设为 `false`
+- **全局铁律**：Cartographer 节点的 `provide_odom_frame` 必须强制设为 `false`，彻底剥夺其直接发布 TF 的权力！
 - `local_ekf_node` 常驻且**唯一广播** `odom -> base_link` TF
 - `differential`：`false`（输出绝对连续位姿，不依赖差分模式）
 
-**退化协方差保护逻辑**：
-- 在本期（2D 阶段），Cartographer 纯定位输出的 `/cartographer_pose` 通过 Pose Relay 适配器以**显式高协方差**喂给第二层 `global_ekf_node`
-- `global_ekf_node` 负责发布唯一的 `map -> odom` TF
-- 当 Cartographer 定位协方差超限时，`global_ekf_node` 自动向底层轮速计 + IMU EKF 权重倾斜，确保即使定位漂移也不会导致底盘瞬移
-
-**产出物**：
-- `config/ekf_local.yaml`：首层 `robot_localization` EKF 节点配置
-- `config/ekf_global.yaml`：第二层全局 EKF 节点配置（融合 Cartographer 位姿）
-- `launch/ekf_localization.launch.py`：启动脚本
-- 关键参数：
-  - `odom0`：`/odom_raw`（轮速里程计话题）
-  - `imu0`：`/imu/data`（IMU 话题）
-  - `differential`：`false`
-  - `odom0_config`：`[true, true, false, false, false, false, false, false, false, false, false, true, false, false, false]`
-  - `imu0_config`：`[false, false, false, false, false, true, false, false, false, false, false, false, false, false, false]`
-
-**通关标准**：
-1. 在 Gazebo 中人为让底盘原地打滑/剧烈冲撞
-2. 观察 Rviz 中 `odom` 坐标系
-3. **铁律**：`odom -> base_link` TF 坐标变换绝对连续，在 `tf_monitor` 中频率 ≥50Hz，且绝无阶跃
-
 ---
 
-### 📦 Unit 3: Cartographer 2D 建图与 explore_lite 自主探索
+### 📦 Unit 3: adam_slam 2D Cartographer 建图与 explore_lite 自动探索
 
-**功能描述**：驱动 2D 激光雷达进行局部图优化（Submap），同时挂载边界前沿（Frontier）算法让小车在仿真环境中自主盲探建图。
+**功能描述**：驱动 2D 激光雷达进行局部子图（Submap）图优化，同时挂载边界前沿（Frontier）算法让小车在未知仿真环境中自动进行全范围探图。
 
-**输入依赖**：`/scan`（激光雷达），`odom -> base_link`（来自 Unit 2）。
+**算法输入**：Level 1 的 2D 激光雷达话题 `/scan`，以及来自 Unit 2 的平滑 `odom -> base_link` TF 树。
 
-**产出物**：
-- `config/cartographer_2d.lua`：建图模式配置（激光关联、运动学窗约束、闭环检测频率）
-- `config/explore_lite.yaml`：边界探索参数（最小边界像素长度、信息增益权重）
-- `launch/cartographer_mapping.launch.py`：一键启动建图 + 盲探
+**核心配置参数 (`cartographer_2d.lua`)**：
 
-**cartographer_2d.lua 关键参数**：
+- `tracking_frame = "base_link"`，`published_frame = "odom"`（注意：不准直接发布到 map）。
+- 激活 `use_odometry = true`，将 Unit 2 融合后的平滑里程计作为扫描匹配（Scan Matching）的空域中心先验。
+- 配置 `explore_lite`：最小边界像素长度设为 5，增益权重设为 1.0，使其能动态消费 Cartographer 实时吐出的 `/map` 话题并自主发布 `/cmd_vel`。
+
+**Cartographer 关键参数**：
 ```lua
--- 轨迹构建器
 TRAJECTORY_BUILDER_2D.submaps.num_range_data = 35
 TRAJECTORY_BUILDER_2D.min_range = 0.1
 TRAJECTORY_BUILDER_2D.max_range = 8.0
@@ -148,14 +109,13 @@ TRAJECTORY_BUILDER_2D.use_online_correlative_scan_matching = true
 TRAJECTORY_BUILDER_2D.real_time_correlative_scan_matcher.linear_search_window = 0.6
 TRAJECTORY_BUILDER_2D.real_time_correlative_scan_matcher.angular_search_window = math.rad(30.)
 
--- 全局位姿估计器（闭环检测）
 POSE_GRAPH.optimize_every_n_nodes = 90
 POSE_GRAPH.constraint_builder.sampling_ratio = 0.3
 POSE_GRAPH.optimization_problem.huber_scale = 1e2
 POSE_GRAPH.optimization_problem.fix_z_in_3d = false
 ```
 
-**explore_lite.yaml 关键参数**：
+**explore_lite 关键参数**：
 ```yaml
 explore_lite:
   ros__parameters:
@@ -166,21 +126,18 @@ explore_lite:
     transform_tolerance: 0.1
 ```
 
-**通关标准**：
-1. 启动仿真环境，加载 `cartographer_mapping.launch.py`
-2. 小车自动提取未建图区域边界（Frontier），自主生成 `/cmd_vel` 驱动底盘
-3. Rviz 中逐渐吐出局部子图（Submaps），无大范围重影或几何扭曲
-
 ---
 
-### 📦 Unit 4: 异步中转地图归档机制
+### 📦 Unit 4: adam_assets 异步数据流落盘与中转归档机制
 
-**功能描述**：解决节点沙盒无权限直接修改 `install/share` 资产路径的问题。建立临时中转区 → 拷贝至源码目录 → 触发 `colcon build` 的完整归档流水线。
+**功能描述**：扫地机自主探图结束后，解决各个 SLAM 节点运行在物理沙盒内、无权限直接改写 `install/share/` 本地代码包的落盘闭环流程。
 
-**输入依赖**：Cartographer 提供的 `/write_state` 服务（写入 `.pbstream`）。
+**归档自动化脚本 (`archive_map.py`)**：
 
-**产出物**：
-- `scripts/archive_map.py`：自动化归档脚本
+- 脚本接收落盘 Service 信号 → 动态调用 Cartographer 的标准服务 `/write_state`。
+- 算法先将地图文件（`.pbstream`, `.yaml`, `.pgm`）写出到系统高权限临时区 `/tmp/adam_maps/`。
+- 脚本利用 OS 级标准库，将文件拷贝搬运至本地 Workspace 的源码路径 `src/3.navigation_ai/adam_assets/share/maps_2d/` 与 `maps_3d/`。
+- 脚本在后台静默异步执行系统级编译指令：`colcon build --packages-select adam_assets`。
 
 **归档流程**：
 ```
@@ -190,7 +147,7 @@ explore_lite:
 调用 Cartographer /write_state 服务 → 写入 /tmp/adam_maps/{timestamp}/
         │
         ▼
-脚本拷贝文件至 src/3.navigation_ai/adam_assets/maps_2d/
+脚本拷贝文件至 src/3.navigation_ai/adam_assets/share/maps_2d/
         │
         ▼
 后台静默执行 colcon build --packages-select adam_assets
@@ -199,72 +156,47 @@ explore_lite:
 验证 install/share/adam_assets/maps_2d/ 下文件就绪
 ```
 
-**脚本接口**：
-```python
-def archive_map(temp_path: str, target_subdir: str, filename: str) -> bool:
-    """
-    将临时文件归档至 adam_assets 并刷新 install/share 路径
-    :param temp_path: /tmp/adam_maps/ 下的源文件路径
-    :param target_subdir: maps_2d / maps_3d 等
-    :param filename: 目标文件名
-    :return: True 表示归档成功
-    """
-```
-
-**通关标准**：
-1. 自主探图完成后，触发归档脚本
-2. 检查 `/tmp/adam_maps/` 是否生成带时间戳的 `.yaml`、`.pgm`、`.pbstream`
-3. 后台 `colcon build` 自动执行完毕
-4. `src/3.navigation_ai/adam_assets/maps_2d/` 下可见完整地图文件
+**通关效果**：刷新 `install/share/` 路径，使二次开机时系统能无缝路由读取新地图，完成非结构化资源闭环。
 
 ---
 
-### 📦 Unit 5: Cartographer 纯定位与一帧重定位
+### 📦 Unit 5: adam_slam 纯定位与一帧无感全局重定位
 
-**功能描述**：小车二次开机时，拒绝人工给定初始位姿（2D Pose Estimate），利用全局分支定界（Branch-and-Bound）扫描匹配，实现开机瞬间定位自动锁死。
+**功能描述**：机器人二次开机，在完全拒绝人工介入给定初始位姿（不依赖 `2D Pose Estimate` 按钮）的前提下，利用全局分支定界（Branch-and-Bound）扫描匹配，实现开机瞬间定位自动锁死。
 
-**输入依赖**：`adam_assets/maps_2d/` 中的静态地图与 `.pbstream`（来自 Unit 4）。
+**核心配置参数 (`cartographer_localization.lua`)**：
 
-**产出物**：
-- `config/cartographer_localization.lua`：纯定位模式配置
-- `launch/cartographer_localization.launch.py`：启动脚本
+- 将 `TRAJECTORY_BUILDER.pure_localization = true` 激活。
+- 将 `POSE_GRAPH.optimize_every_n_nodes = 3`（高频触发全局优化，加速重定位速度）。
+- 节点加载 Unit 4 归档的 `.pbstream` 资产，开机一帧雷达数据打在墙上，瞬间解算并输出高频全局绝对位姿话题 `/cartographer_pose` 喂给 Unit 2 的全局 EKF。
 
 **关键参数差异（与建图模式对比）**：
 ```lua
--- 纯定位模式
 TRAJECTORY_BUILDER_2D.pure_localization = true
 TRAJECTORY_BUILDER_2D.use_online_correlative_scan_matching = false
 POSE_GRAPH.overlapping_submaps_trimmer_2d = nil
 
--- 全局重定位参数（分支定界）
 POSE_GRAPH.constraint_builder.sampling_ratio = 0.9
 POSE_GRAPH.constraint_builder.min_score = 0.55
 POSE_GRAPH.constraint_builder.global_localization_min_score = 0.4
 
--- 加载已保存的 pbstream
--- 通过命令行参数：-load_state_filename <pbstream_path>
+-- 通过命令行参数加载 pbstream：-load_state_filename <pbstream_path>
 ```
-
-**通关标准**：
-1. 关闭所有节点，将小车在 Gazebo 仿真中**随机传送到地图任意未知角落**（模拟劫持开机）
-2. 启动纯定位 Launch，加载上一步生成的地图资产
-3. **铁律**：不给任何 2D Pose Estimate，雷达扫描一帧打在墙上，Cartographer 分支定界算法必须在 **1 秒内** 将 `map -> odom` TF 对齐锁死，Rviz 中车子瞬间跳回正确位置
 
 ---
 
-### 📦 Unit 6: Nav2 Smac & MPPI 运控集成
+### 📦 Unit 6: adam_navigation Nav2 Smac & MPPI 运控级集成
 
-**功能描述**：消费全局定位，进行 Hybrid-A* 运动学可行寻路，并通过模型预测路径积分（MPPI）进行高频滚动避障运控。
+**功能描述**：消费 Level 2 发布的绝对平滑的 TF 树，进行 Hybrid-A* 运动学寻路，并通过模型预测路径积分（MPPI）进行高频滚动避障，内嵌扫地机基础自救行为树。
 
-**输入依赖**：Unit 5 输出的定位 + 全局 EKF 节点（统一发布 `map -> odom` TF）。
+**核心配置参数 (`nav2_2d_config.yaml`)**：
 
-**产出物**：
-- `config/nav2_2d_params.yaml`：Nav2 配置（SmacPlanner2D + MPPI + Behavior Tree）
-- `launch/navigation.launch.py`：Nav2 启动脚本
+- **Planner**：挂载 `nav2_smac_planner/SmacPlanner2D`，针对差速/全向底盘约束，开辟运动学可行路径。
+- **Controller**：挂载 `nav2_mppi_controller/MPPIController`。配置时间前向推演步数 `time_steps = 56`，模型速度扰动采样率 `batch_size = 2000`，确保底盘丝滑加速，动态绕行不突兀减速。
+- **自救行为树 (Recovery BT)**：内嵌标准动作序列：`ClearLocalCostmap` → `Spin`（原地旋转重定位） → `Backup`（倒车脱困）。
 
-**nav2_2d_params.yaml 关键参数**：
+**Nav2 配置**：
 ```yaml
-# Smac Planner 2D
 planner_server:
   ros__parameters:
     planner_plugin_types: ["nav2_smac_planner/SmacPlanner2D"]
@@ -275,7 +207,6 @@ planner_server:
       max_iterations: 1000000
       smooth_path: true
 
-# MPPI Controller
 controller_server:
   ros__parameters:
     controller_plugin_types: ["nav2_mppi_controller/MppIController"]
@@ -291,7 +222,6 @@ controller_server:
       wz_max: 0.8
       enable_obstacle_collision_check: true
 
-# Behavior Tree 恢复行为
 bt_navigator:
   ros__parameters:
     default_nav_to_pose_bt_xml: "navigate_to_pose_w_recovery_and_remapping.xml"
@@ -306,107 +236,88 @@ ClearCostmapRecovery (清除局部代价图残影)
         → 若全部失败，通过 /adam_hub/recovery_failed 上报
 ```
 
-**通关标准**：
-1. 在 Rviz 中任意下发远距离目标点，Smac Planner 秒级给出 Hybrid-A* 可行路径
-2. MPPI 控制器确保底盘平滑加速，动态障碍物丝滑绕行，无突兀降速
-3. 前方强行用仿真物体"堵死"去路，观察终端触发 `ClearCostmap → Spin → Backup` 自救序列
+---
+
+## 3. Bottom-Up 路线图与单点测试验收方案 (Gate Criteria)
+
+测试必须在仿真/真实物理环境中严格按照以下 6 步推进，并闭环通过白纸黑字的测试用例。上一步骤未达成通关标准，严禁推进。
+
+```
+[步骤 1: 建立静态包骨架] → [步骤 2: 锁死常驻底座 EKF] → [步骤 3: 自主探索建图]
+                                                                  │
+[步骤 6: Nav2 丝滑运控] ← [步骤 5: 开机一帧无感定位] ← [步骤 4: 异步中转归档闭环]
+```
 
 ---
 
-## 3. 严格 Bottom-Up 构建与调试顺序
+### 🛠️ 步骤 1：构建资产包与 Ament 动态索引 (Unit 1) — 预估 0.5 天
 
-严禁跨阶段开发。每一步的前置步骤必须通关后才能进入下一步。
+**操作方法**：在本地 `share/maps_2d/` 下手动放置一个虚拟的 `test_map.yaml`。运行 `colcon build --packages-select adam_assets`。打开任意外部 Python 终端，调用 `get_asset_path('maps_2d', 'test_map.yaml')` 函数。
 
-```
-步骤 1: Unit 1 资产包骨架 (0.5天)
-    ↓
-步骤 2: Unit 2 底层 EKF 里程计 (0.5天)
-    ↓
-步骤 3: Unit 3 Cartographer 建图 + explore_lite 探索 (1天)
-    ↓
-步骤 4: Unit 4 地图归档流水线 (0.5天)
-    ↓
-步骤 5: Unit 5 开机一帧重定位 (0.5天)
-    ↓
-步骤 6: Unit 6 Nav2 Smac + MPPI 运控 (1天)
-```
+**验收方案与标准（Gate 1）**：
 
-### 🛠️ 步骤 1：构建资产包骨架 (Unit 1) — 0.5 天
+1. **无硬编码验证**：检查打印结果，若能在不依赖系统绝对路径（如 `/home/user/...`）的前提下，准确打印出以 `install/adam_assets/share/adam_assets/maps_2d/test_map.yaml` 结尾的沙盒内绝对路径，则地基通关。
 
-**操作**：
-1. 在 `src/3.navigation_ai/` 下创建 `adam_assets/` 包
-2. 编写 `CMakeLists.txt`，使用 `install(DIRECTORY ...)` 分发所有子目录
-3. 编写 `package.xml`
-4. 执行 `colcon build --packages-select adam_assets`
+---
 
-**通关验证**：
-```bash
-# 验证路径可访问
-python3 -c "from ament_index_python.packages import get_package_share_directory; print(get_package_share_directory('adam_assets'))"
-# 输出应为：/home/pi/workplace/robot_adam/install/adam_assets/share/adam_assets
-```
+### 🛠️ 步骤 2：锁死底层常驻里程计 TF 树与降级流控机制 (Unit 2) — 预估 0.5 天
 
-### 🛠️ 步骤 2：锁死底层里程计 (Unit 2) — 0.5 天
+**操作方法**：启动 Gazebo 仿真小车，控制底盘使其在滑腻地面上原地疯狂旋转打滑，或通过仿真器给人为给车身施加剧烈的物理侧向碰撞。监控终端并观测 Rviz 中的 `odom` 坐标系与 TF 树。
 
-**操作**：
-1. 在 `src/2.localization_mapping/adam_localization/` 下创建 `config/ekf_local.yaml`
-2. 编写 `launch/ekf_localization.launch.py`
-3. 启动 Gazebo + 启动 EKF 节点
+**验收方案与标准（Gate 2）**：
 
-**通关验证**：
-```bash
-# 在 Rviz 中添加 odom 显示，人为让小车打滑
-ros2 run tf2_tools tf2_monitor
-# 确认 odom -> base_link 频率 ≥50Hz，无阶跃
-```
+1. **高频连续性验证**：使用 `ros2 run tf2_ros tf2_monitor odom base_link` 监控。`odom -> base_link` 的 TF 广播频率必须稳定常驻 **≥50Hz**，丢包率 ≤0.1%。
+2. **剧烈运动防跳变验证**：在整个原地打滑和强碰撞过程中，坐标变换曲线必须绝对物理连续。
+3. **通关铁律**：**显式观测 Rviz，整车模型坐标绝不允许发生哪怕 1 厘米或 1 度的瞬间画面跃迁、抖动或断流**。
 
-### 🛠️ 步骤 3：自主盲探建图 (Unit 3) — 1 天
+---
 
-**操作**：
-1. 在 `src/2.localization_mapping/adam_slam/` 下创建配置和 Launch 文件
-2. 安装依赖：`sudo apt install ros-humble-cartographer ros-humble-cartographer-ros`
-3. 编译并启动建图 Launch
+### 🛠️ 步骤 3：自主探索建图与局部子图质量调优 (Unit 3) — 预估 1 天
 
-**通关验证**：
-- Rviz 中看到小车自主探索未知区域
-- 实时 `/map` 话题持续更新
-- 子图无大范围重影
+**操作方法**：一键拉起建图 Launch 链，启动 Cartographer 与 explore_lite。观察小车是否能自主提取未建图区域的边界（Frontier），并自主生成稳定的 `/cmd_vel` 驱动底盘。
 
-### 🛠️ 步骤 4：地图落盘归档 (Unit 4) — 0.5 天
+**验收方案与标准（Gate 3）**：
 
-**操作**：
-1. 编写 `scripts/archive_map.py`
-2. 探图完成后触发归档
+1. **自主探图覆盖率验证**：在 100 平方米的复杂多房间仿真地图中，小车必须在 **15 分钟内**自主探索完大面积区域，中途无任何卡死或原地无限转圈现象。
+2. **地图锋利度验证**：观察 Rviz 中逐渐吐出的局部子图（Submaps）。
+3. **通关铁律**：当小车在仿真环境中高速行走、甚至原地快速自旋时，建出来的墙壁和几何线条必须保持锋利（厚度在 1-2 像素以内）。**在没有触发回环检测（Loop Closure）前，由于有融合里程计的精准空域先验，局部子图绝不允许出现可见的重影、线条分叉或墙壁重叠现象**。
 
-**通关验证**：
-```bash
-ls /tmp/adam_maps/           # 确认有时间戳目录和文件
-ls src/3.navigation_ai/adam_assets/maps_2d/  # 确认文件已拷贝
-```
+---
 
-### 🛠️ 步骤 5：开机一帧重定位 (Unit 5) — 0.5 天
+### 🛠️ 步骤 4：打通资产序列化中转与归档流水线 (Unit 4) — 预估 0.5 天
 
-**操作**：
-1. 创建纯定位配置和 Launch
-2. 关闭所有节点，在 Gazebo 中随机重摆小车位置
-3. 启动纯定位模式加载地图
+**操作方法**：小车自主探索建图完毕后，通过终端或中枢发送触发信号激活 `archive_map.py` 归档脚本。
 
-**通关验证**：
-- 不给 2D Pose Estimate
-- 1 秒内 `map -> odom` TF 自动对齐
-- Rviz 中小车瞬间跳回正确位置
+**验收方案与标准（Gate 4）**：
 
-### 🛠️ 步骤 6：Nav2 运控调优 (Unit 6) — 1 天
+1. **落盘完整性验证**：检查系统的 `/tmp/adam_maps/` 目录，必须包含完好的、带统一时间戳后缀的 `.yaml`（栅格配置文件）、`.pgm`（占用概率图像）和 `.pbstream`（Cartographer 序列化地图状态）三件套。
+2. **源码仓库自动刷新验证**：静待数秒，检查本地 Workspace 源码路径 `src/3.navigation_ai/adam_assets/share/maps_2d/` 下，必须已经静默同步拷入了上述新生成的地图文件。
+3. **通关铁律**：后台异步编译进程完成后，执行 `ros2 asset` 或检查 `install/` 目录，**新地图文件必须以 100% 的确定性被打包部署进 ROS2 静态运行沙盒内，系统无需二次手动 colcon build 即可被其他节点加载**。
 
-**操作**：
-1. 安装 Nav2 依赖：`sudo apt install ros-humble-navigation2 ros-humble-nav2-bringup`
-2. 创建 Nav2 参数配置和 Launch
-3. 启动后下发目标点测试
+---
 
-**通关验证**：
-- Rviz 下发目标点，秒级规划可行路径
-- 小车平滑加速、绕障
-- 堵死时触发 BT 恢复序列
+### 🛠️ 步骤 5：劫持机器人验证开机一帧无感全局重定位 (Unit 5) — 预估 0.5 天
+
+**操作方法**：关闭全车所有节点。在 Gazebo 仿真器中，**将小车随机传送到静态地图的任意未知角落**（模拟人类在关机状态下把机器人抱到了别的房间，即经典的机器人"被劫持"场景）。拉起纯定位 Launch 链，加载步骤 4 归档的 `.pbstream` 地图。
+
+**验收方案与标准（Gate 5）**：
+
+1. **盲开禁止验证**：整个启动过程**完全禁止人工点击 Rviz 上的 `2D Pose Estimate` 按钮下发初始位置猜测**。
+2. **时效性量化指标**：车子在完全静止状态下，雷达扫描一帧打在墙上，全局分支定界匹配算法必须在 **1.0 秒之内（硬性门槛）** 瞬间匹配成功。
+3. **通关铁律**：定位成功瞬间，`global_ekf_node` 发布的 `map -> odom` TF 瞬间对齐锁死，Rviz 上的整车 3D 模型**必须瞬间精准跳回小车当前在 Gazebo 里所处的实际房间和绝对坐标系中**，重定位位置误差 ≤3cm，角度误差 ≤2°。
+
+---
+
+### 🛠️ 步骤 6：Nav2 运控高频避障与行为树自救测试 (Unit 6) — 预估 1 天
+
+**操作方法**：拉起配置了 Smac 规划器与 MPPI 控制器的 Nav2 导航全栈。在 Rviz 地图上跨区域下发一个远距离目标点。在小车开始全速前行的路线正前方，通过仿真器**突发性地丢下一块静止的障碍物箱子**。随后，再用一圈箱子将小车的全向去路**彻底堵死**。
+
+**验收方案与标准（Gate 6）**：
+
+1. **规划时效验证**：Smac Planner 必须在 **50 毫秒内**给出符合车身运动学、无任何多余尖锐折角的 Hybrid-A* 可行寻路轨迹。
+2. **滚动避障丝滑度验证**：当突发障碍物抛下时，MPPI 控制器必须在其前向 56 步的时空推演中迅速感知代价图升高。小车必须以极度平滑的弧线优雅绕过箱子。
+3. **通关铁律（运控无顿挫）**：绕行期间，**小车的线速度减速幅值绝对不允许超过原设定速度的 20%，整车绝不允许发生任何突兀的急刹、停顿或倒退**。
+4. **自救行为树闭环验证**：当去路被彻底堵死时，底盘在原地死锁 2.0 秒内，必须无条件触发定制行为树。查看终端日志，小车必须严密执行 `ClearCostmapRecovery` → `Spin`（原地旋转找出口） → `Backup`（倒车脱困）的自救跳转流，且状态机反馈（Status Feedback）绝不抛出任何指针异常。
 
 ---
 
@@ -430,11 +341,11 @@ git clone https://github.com/hrnr/m-explore.git -b ros2
 
 ## 5. 交付标准总览
 
-| 单元 | 产出 | 通关标准 | 工期 |
-|------|------|---------|------|
-| Unit 1 | adam_assets 包 | `ament_index_python` 可检索 | 0.5d |
-| Unit 2 | EKF 里程计 | `odom->base_link` ≥50Hz 无阶跃 | 0.5d |
-| Unit 3 | Cartographer 建图 + explore_lite | 自主探索吐子图 | 1d |
-| Unit 4 | 归档脚本 | 地图存入 `adam_assets/maps_2d/` | 0.5d |
-| Unit 5 | Cartographer 纯定位 | 1 秒内一帧重定位 | 0.5d |
-| Unit 6 | Nav2 Smac + MPPI | 路径规划 + 绕障 + BT 自救 | 1d |
+| 单元 | 产出物 | 通关标准 | 工期 |
+|------|-------|---------|------|
+| Unit 1 | adam_assets 包 + get_asset_path() | `ament_index_python` 可检索，无硬编码 | 0.5d |
+| Unit 2 | EKF 里程计底座（local + global） | `odom->base_link` ≥50Hz 无阶跃，降级保护 | 0.5d |
+| Unit 3 | Cartographer 建图 + explore_lite | 100m² 15min 自主探索，子图锋利无重影 | 1d |
+| Unit 4 | archive_map.py 归档脚本 | 地图三件套落盘 + 自动 colcon build 刷新 | 0.5d |
+| Unit 5 | Cartographer 纯定位 | 1s 内一帧重定位，位置误差 ≤3cm，角度 ≤2° | 0.5d |
+| Unit 6 | Nav2 Smac + MPPI + BT 自救 | 50ms 规划，绕障不降速 20%，BT 自救链完整 | 1d |
