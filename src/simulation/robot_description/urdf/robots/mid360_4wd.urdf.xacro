@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="mid360_4wd">
+
+    <xacro:include filename="$(find robot_description)/urdf/common/base.xacro"/>
+    <xacro:include filename="$(find robot_description)/urdf/common/wheel.xacro"/>
+
+    <xacro:include filename="$(find robot_description)/urdf/controllers/diff_drive_4wd.xacro"/>
+    <xacro:include filename="$(find robot_description)/urdf/plugins/gazebo_sensors.xacro"/>
+
+    <xacro:include filename="$(find adam_description)/urdf/sensors/mid360.xacro"/>
+    <xacro:include filename="$(find adam_description)/urdf/sensors/imu.xacro"/>
+    <xacro:include filename="$(find adam_description)/urdf/sensors/mono_camera.xacro"/>
+
+    <!-- 底盘 -->
+    <xacro:base com_z="0.03"/>
+
+    <!-- 四轮全部驱动（continuous joint, mu=1.0） -->
+    <xacro:wheel side="front_left"  pos_x="0.08" pos_y="0.085"  pos_z="-0.05" joint_type="continuous" mu="1.0"/>
+    <xacro:wheel side="front_right" pos_x="0.08" pos_y="-0.085" pos_z="-0.05" joint_type="continuous" mu="1.0"/>
+    <xacro:wheel side="rear_left"   pos_x="-0.08" pos_y="0.085"  pos_z="-0.05" joint_type="continuous" mu="1.0"/>
+    <xacro:wheel side="rear_right"  pos_x="-0.08" pos_y="-0.085" pos_z="-0.05" joint_type="continuous" mu="1.0"/>
+
+    <!-- 传感器 -->
+    <xacro:mid360 name="laser" parent="base_link">
+        <origin xyz="0.0 0.0 0.06" rpy="0 0 0"/>
+    </xacro:mid360>
+    <xacro:imu name="imu" parent="base_link">
+        <origin xyz="0.0 0.0 0.02" rpy="0 0 0"/>
+    </xacro:imu>
+    <xacro:mono_camera name="camera" parent="base_link">
+        <origin xyz="0.12 0.0 0.03" rpy="0 0.2 0"/>
+    </xacro:mono_camera>
+
+    <!-- 应用插件 -->
+    <xacro:diff_drive_4wd/>
+    <xacro:gazebo_sensors/>
+
+</robot>

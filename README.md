@@ -24,6 +24,33 @@ robot_adam/
     └── livox_ros_driver2/     # Livox 激光雷达驱动
 ```
 
+## 项目结构
+
+```
+robot_adam/
+├── adam_description/          # 机器人描述包
+│   ├── urdf/                  # URDF/Xacro 机器人模型
+│   │   ├── common/            # 公共组件
+│   │   ├── base/              # 底盘和轮子
+│   │   ├── sensors/           # 传感器模型
+│   │   ├── plugins/           # Gazebo 和 ROS2 插件
+│   │   ├── ackermann_mid360.urdf.xacro  # Mid360 版本
+│   │   └── ackermann_laser.urdf.xacro   # 2D 激光版本
+├── simulation/                # 仿真机器人描述包 (6 drive variants)
+│   └── robot_description/     # 2WD/4WD/Omni × Mid360/Laser = 6 variants
+│       ├── urdf/              # URDF/Xacro models
+│       │   ├── common/        # base.xacro, wheel.xacro, caster_wheel.xacro
+│       │   ├── controllers/   # diff_drive_2wd/4wd, omni_drive, gazebo_sensors
+│       │   ├── plugins/       # gazebo_sensors (empty shell)
+│       │   └── robots/        # 6 URDF variants
+│       ├── launch/            # 6 launch.py files
+│       ├── config/rviz/       # 6 rviz config files
+│       └── worlds/            # empty.world, bigH.world
+├── adam_bringup/              # 启动包
+└── 3rd_packages/              # 第三方包
+    └── livox_ros_driver2/     # Livox 激光雷达驱动
+```
+
 ## 机器人配置
 
 本项目提供两种传感器配置的阿克曼小车：

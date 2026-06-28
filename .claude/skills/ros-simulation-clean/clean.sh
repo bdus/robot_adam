@@ -1,7 +1,8 @@
 #!/bin/bash
 # ==============================================================================
 # Skill: ros-simulation-clean
-# Description: Deterministically cleans up Gazebo and ROS2 simulation remnants.
+# Description: Nuclear clean of Gazebo/ROS2 simulation — kills ALL remaining
+# ROS2 nodes (not just simulation-specific ones), resets daemon, frees port.
 # Invoked by SKILL.md. All logic in Bash — zero LLM cycles.
 # ==============================================================================
 
@@ -21,8 +22,8 @@ for setup in \
     fi
 done
 
-clean_processes() {
-    # Kill all known simulation-spawned processes aggressively
+nuke_all_nodes() {
+    # Phase 1: Kill known simulation-spawned processes
     pkill -9 -f "gzserver" 2>/dev/null || true
     pkill -9 -f "gzclient" 2>/dev/null || true
     pkill -9 -f "ruby.*ign" 2>/dev/null || true
@@ -31,10 +32,28 @@ clean_processes() {
     pkill -9 -f "ign gazebo" 2>/dev/null || true
     pkill -9 -f "ros2_control_node" 2>/dev/null || true
     pkill -9 -f "component_container" 2>/dev/null || true
-    # Kill all robot_state_publisher and joint_state_publisher (often spawned by launch)
     pkill -9 -f "robot_state_publisher" 2>/dev/null || true
     pkill -9 -f "joint_state_publisher" 2>/dev/null || true
     pkill -9 -f "spawn_entity" 2>/dev/null || true
+
+    # Phase 2: Kill ALL remaining ROS2 node processes dynamically
+    # Every non-core node found in ros2 node list gets its process killed
+    local remaining
+    remaining=$(ros2 node list 2>/dev/null | grep -v -E '^/_$|^/rosout$|WARNING' || true)
+    if [ -n "$remaining" ]; then
+        echo "$remaining" | while IFS= read -r node; do
+            local proc_name
+            # Strip leading / to get the node name as process identifier
+            proc_name=$(echo "$node" | sed 's|^/||')
+            pkill -9 -f "$proc_name" 2>/dev/null || true
+        done
+        sleep 0.5
+    fi
+
+    # Phase 3: Kill orphaned ros2 CLI processes (topic pub, topic echo, etc.)
+    pkill -9 -f "ros2 topic" 2>/dev/null || true
+    pkill -9 -f "ros2 service" 2>/dev/null || true
+    pkill -9 -f "ros2 bag" 2>/dev/null || true
 
     # Clean up Gazebo lock files that can prevent restart
     rm -rf /tmp/*gazebo* /tmp/*ignition* 2>/dev/null || true
@@ -46,17 +65,6 @@ clean_processes() {
     sleep 0.5
     ros2 daemon start 2>/dev/null || true
     sleep 2.0
-}
-
-# Resolve project root for hook invocation
-readonly _WOLF_HOOK="$(cd "$(dirname "$0")/../../../.." && pwd)/.wolf/hooks/verify-ros-clean.js"
-
-run_verify_hook() {
-    if [ -f "$_WOLF_HOOK" ]; then
-        node "$_WOLF_HOOK" <<'HOOK_EOF'
-{"tool":"Skill","input":{"skill":"ros-simulation-clean"}}
-HOOK_EOF
-    fi
 }
 
 check_port() {
@@ -83,36 +91,23 @@ check_port() {
 }
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    NODE_LIST=$(ros2 node list 2>/dev/null | grep -v '^$')
+    nuke_all_nodes
 
-    if [ -z "$NODE_LIST" ]; then
+    NODE_LIST=$(ros2 node list 2>/dev/null | grep -v '^$' | grep -v 'WARNING')
+
+    if [ -z "$NODE_LIST" ] || [ "$(echo "$NODE_LIST" | grep -c -v -E '^/_$|^/rosout$')" -eq 0 ]; then
         check_port 11345 || exit 1
-        echo "PASS: No residual ROS2 simulation nodes detected."
-        run_verify_hook
+        echo "PASS: No residual ROS2 nodes detected."
         exit 0
     fi
 
-    # Filter for simulation-related nodes only
-    # Includes common nodes spawned by robot simulation launch files
-    SIM_NODES=$(echo "$NODE_LIST" | grep -E "(gazebo|sim|gz|robot_state_publisher|joint_state_publisher)" || true)
-
-    if [ -z "$SIM_NODES" ]; then
-        check_port 11345 || exit 1
-        echo "PASS: No residual simulation nodes detected (only core/system nodes remain)."
-        run_verify_hook
-        exit 0
-    fi
-
-    echo "WARN: Detected simulation nodes (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES):"
-    echo "$SIM_NODES"
-
-    clean_processes
+    echo "WARN: Nodes still present (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES):"
+    echo "$NODE_LIST"
     ((RETRY_COUNT++))
 done
 
 # Final port check even on failure
 check_port 11345 || true
-run_verify_hook
 
-echo "FAIL: Simulation nodes remain after $MAX_RETRIES cleanup attempts."
+echo "FAIL: Nodes remain after $MAX_RETRIES cleanup attempts."
 exit 1

@@ -1,0 +1,67 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <xacro:include filename="$(find adam_description)/urdf/common/common_inertia.xacro"/>
+
+    <!-- 底盘基座（参数化：尺寸、质量、COM高度、摩擦系数） -->
+    <xacro:macro name="base" params="
+        length:=0.24 width:=0.18 height:=0.08 mass:=1.5
+        com_z:=0.03 mu:=0.8
+        color_r:=0.2 color_g:=0.4 color_b:=0.8">
+
+        <!-- base_footprint 虚 link -->
+        <link name="base_footprint"/>
+
+        <!-- base_link 主底盘 -->
+        <joint name="base_joint" type="fixed">
+            <parent link="base_footprint"/>
+            <child link="base_link"/>
+            <origin xyz="0 0 ${com_z}" rpy="0 0 0"/>
+        </joint>
+
+        <link name="base_link">
+            <visual>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <box size="${length} ${width} ${height}"/>
+                </geometry>
+                <material name="base_material">
+                    <color rgba="${color_r} ${color_g} ${color_b} 1.0"/>
+                </material>
+            </visual>
+            <collision>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <box size="${length} ${width} ${height}"/>
+                </geometry>
+            </collision>
+            <xacro:box_inertia m="${mass}" w="${length}" h="${height}" d="${width}"/>
+        </link>
+
+        <gazebo reference="base_link">
+            <material>Gazebo/Blue</material>
+            <mu1>${mu}</mu1>
+            <mu2>${mu}</mu2>
+        </gazebo>
+
+        <!-- 前向箭头（视觉指示） -->
+        <link name="forward_arrow">
+            <visual>
+                <geometry>
+                    <box size="0.08 0.01 0.01"/>
+                </geometry>
+                <material name="arrow_material">
+                    <color rgba="1.0 0.0 0.0 1.0"/>
+                </material>
+                <origin xyz="${length/2 + 0.04} 0 ${height/2 + 0.02}" rpy="0 0 0"/>
+            </visual>
+        </link>
+        <joint name="forward_arrow_joint" type="fixed">
+            <parent link="base_link"/>
+            <child link="forward_arrow"/>
+            <origin xyz="0 0 0"/>
+        </joint>
+
+    </xacro:macro>
+
+</robot>

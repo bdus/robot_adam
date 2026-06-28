@@ -34,3 +34,10 @@
     6. **测试执行**: 根据情况使用类似`ros2 topic pub` 发送控制或导航命令，观察相应话题（如 `/odom`、`/tf` 等）验证系统状态
     7. **测试结束**: 清理进程（使用 ros-simulation-clean skill）以准备后续操作
 
+
+- [2026-06-28] **verify-ros-clean hook 不生效**:
+  - **原因**: settings.json 的 PostToolUse 中没有注册 Skill 的 hook matcher，所以 verify-ros-clean.js 从未作为 hook 执行
+  - **另**: 该 hook 原本把非核心节点全部标记为残留（如 joy_linux_node、teleop_twist_joy_node、ekf_filter_node 等正常机器人控制节点），产生大量误报
+  - **修复**: 
+    1. settings.json PostToolUse 中添加 Skill matcher → `"matcher": "Skill"`
+    2. hook 改为用仿真特定模式匹配，只检测 gazebo/gzserver/gzclient/ignition/spawn_entity/robot_state_publisher/joint_state_publisher 相关节点

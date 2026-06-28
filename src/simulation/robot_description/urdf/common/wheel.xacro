@@ -1,0 +1,67 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <xacro:include filename="$(find adam_description)/urdf/common/common_inertia.xacro"/>
+
+    <!-- 统一轮子宏（参数化：位置、joint_type、摩擦系数、质量） -->
+    <xacro:macro name="wheel" params="
+        side pos_x pos_y pos_z
+        joint_type:='fixed' mu:=1.0
+        radius:=0.04 width:=0.032 mass:=0.1
+        has_collision:=true collision_type:='cylinder'">
+
+        <xacro:property name="wheel_name" value="${side}_wheel" />
+
+        <link name="${wheel_name}_link">
+            <visual>
+                <origin xyz="0 0 0" rpy="1.57079 0 0"/>
+                <geometry>
+                    <cylinder length="${width}" radius="${radius}"/>
+                </geometry>
+                <material name="wheel_material">
+                    <color rgba="0.1 0.1 0.1 1.0"/>
+                </material>
+            </visual>
+
+            <xacro:if value="${has_collision}">
+            <xacro:if value="${collision_type == 'sphere'}">
+            <collision>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <sphere radius="${radius}"/>
+                </geometry>
+            </collision>
+            </xacro:if>
+            <xacro:if value="${collision_type == 'cylinder'}">
+            <collision>
+                <origin xyz="0 0 0" rpy="1.57079 0 0"/>
+                <geometry>
+                    <cylinder length="${width}" radius="${radius}"/>
+                </geometry>
+            </collision>
+            </xacro:if>
+            <xacro:if value="${collision_type == 'none'}">
+            </xacro:if>
+            </xacro:if>
+
+            <xacro:cylinder_inertia m="${mass}" r="${radius}" h="${width}"/>
+        </link>
+
+        <joint name="${wheel_name}_joint" type="${joint_type}">
+            <parent link="base_link"/>
+            <child link="${wheel_name}_link"/>
+            <origin xyz="${pos_x} ${pos_y} ${pos_z}" rpy="0 0 0"/>
+            <xacro:if value="${joint_type == 'continuous'}">
+                <axis xyz="0 1 0"/>
+            </xacro:if>
+        </joint>
+
+        <gazebo reference="${wheel_name}_link">
+            <material>Gazebo/Black</material>
+            <mu1>${mu}</mu1>
+            <mu2>${mu}</mu2>
+        </gazebo>
+
+    </xacro:macro>
+
+</robot>
