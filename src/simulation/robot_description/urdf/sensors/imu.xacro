@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
-    <xacro:include filename="$(find adam_description)/urdf/common/common_inertia.xacro"/>
+    <xacro:include filename="$(find robot_description)/urdf/common/common_inertia.xacro"/>
 
     <!-- =============== IMU 传感器 =============== -->
     <xacro:macro name="imu" params="name:='imu' parent:='base_link' *origin">

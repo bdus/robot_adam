@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
-    <xacro:include filename="$(find adam_description)/urdf/common/common_inertia.xacro"/>
+    <xacro:include filename="$(find robot_description)/urdf/common/common_inertia.xacro"/>
 
     <!-- 2WD 前轮万向轮（球体方案，mu=0.01 极低摩擦） -->
     <xacro:macro name="caster_wheel" params="

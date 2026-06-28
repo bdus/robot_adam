@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
-    <xacro:include filename="$(find adam_description)/urdf/common/common_inertia.xacro"/>
+    <xacro:include filename="$(find robot_description)/urdf/common/common_inertia.xacro"/>
 
     <!-- 统一轮子宏（参数化：位置、joint_type、摩擦系数、质量） -->
     <xacro:macro name="wheel" params="

@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
-    <xacro:include filename="$(find adam_description)/urdf/common/common_inertia.xacro"/>
+    <xacro:include filename="$(find robot_description)/urdf/common/common_inertia.xacro"/>
 
     <!-- =============== 单目相机 =============== -->
     <xacro:macro name="mono_camera" params="name:='camera' parent:='base_link' *origin">

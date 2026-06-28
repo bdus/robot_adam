@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
-    <xacro:include filename="$(find adam_description)/urdf/common/common_inertia.xacro"/>
+    <xacro:include filename="$(find robot_description)/urdf/common/common_inertia.xacro"/>
 
     <!-- 底盘基座（参数化：尺寸、质量、COM高度、摩擦系数） -->
     <xacro:macro name="base" params="
