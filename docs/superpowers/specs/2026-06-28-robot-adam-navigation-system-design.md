@@ -91,6 +91,9 @@ Robot Adam 旨在构建一个解耦物理底盘、算法栈可任意插拔切换
 | 定位（Localization） | **Cartographer 纯定位模式** | 利用分支定界法（Branch-and-Bound）进行全局相关扫描匹配，支持开机一帧无感重定位 |
 | 全局规划 | **Nav2 Smac Planner 2D** | Hybrid-A* / Dubins 运动学可行路径 |
 | 局部控制 | **Nav2 MPPI Controller** | 模型预测路径积分，全面适配差速与全向车型 |
+| 行为树恢复 | **Nav2 Behavior Tree (Spin/Backup/Wait/ClearCostmapRecovery)** | 原地旋转重定位、倒车脱困、静止等待清除代价图残影、全局路径重新规划 |
+
+行为树恢复层是扫地机自救能力的核心。当机器人被卡住、定位漂移或代价图被残影堵塞时，Nav2 Behavior Tree 会自动按优先级依次触发恢复行为：`ClearCostmapRecovery`（清除局部代价图）→ `Spin`（原地旋转 360° 重定位）→ `Backup`（倒车退出卡死区域）→ 全局路径重规划。若所有恢复行为均失败，通过 `/adam_hub/recovery_failed` 话题上报中枢控制器，由中枢决策是否进入安全停车（Safety Stop）状态。
 
 ### 3.2 3D 激光导航栈（立体时空避障方案）
 
@@ -155,6 +158,47 @@ adam_assets/                            # 独立、干净的资产 ROS2 标准�
 
 ### 4.2 资产读取代码规范
 
+### 4.2 资产归档机制（地图保存闭环）
+
+底层算法节点运行在各自沙盒中，无权限直接写入 `adam_assets` 源码包的 `share/` 路径。必须建立标准的中转归档流程：
+
+```
+触发 /adam_hub/save_current_map 服务
+        │
+        ▼
+底层算法将地图写入 /tmp/adam_maps/{timestamp}/ （临时中转区）
+        │
+        ▼
+adam_hub_controller 调用资产归档脚本
+        │
+        ▼
+脚本将文件移动至 src/3.navigation_ai/adam_assets/{maps_2d,maps_3d,...}/
+        │
+        ▼
+触发 colcon build --packages-select adam_assets 刷新 install/ 中的 share 路径
+        │
+        ▼
+中枢控制器确认 install/share/adam_assets/ 下文件已就绪
+```
+
+```python
+# adam_hub_controller/scripts/archive_map.py
+import shutil, subprocess, os
+from ament_index_python.packages import get_package_share_directory
+
+def archive_map(temp_path: str, target_subdir: str, filename: str):
+    ws_root = os.path.expanduser("~/robot_adam_ws")
+    target = os.path.join(ws_root, "src/3.navigation_ai/adam_assets", target_subdir, filename)
+    shutil.copy2(temp_path, target)
+    subprocess.run(["colcon", "build", "--packages-select", "adam_assets"],
+                   cwd=ws_root, capture_output=True)
+    # 验证归档成功
+    final_path = get_package_share_directory("adam_assets") + "/" + target_subdir + "/" + filename
+    assert os.path.exists(final_path), f"Map archive failed: {final_path} not found"
+```
+
+### 4.3 资产读取代码规范
+
 所有 Python 节点通过 `ament_index_python` 统一调阅资产，禁止使用硬编码路径：
 
 ```python
@@ -203,11 +247,39 @@ map_config_path = get_asset_path('maps_2d', 'apartment_map.yaml')
 
 ### 5.3 状态迁移与底层节点挂载矩阵
 
+**⚡ TF 树广播权硬约束**：任何时候，有且仅有一个节点拥有 `/tf` 中 `map -> odom` 的广播权。所有 SLAM/VSLAM 节点在配置中必须将 `publish_tf` 设为 `false`，将其位姿作为 `nav_msgs/msg/Odometry` 话题输出给 `adam_localization` 层的 `dual_ekf_node`，由 EKF 统一发布唯一的、绝对平滑的 `map -> odom` TF。违反此约束将导致底盘运控瞬间死锁。
+
 | 模式指令 | 中枢 Lifecycle 状态 | 动态激活的子节点 | 动态挂起的子节点 |
 |----------|-------------------|-----------------|-----------------|
 | **1. 无图探索建图** | `Active (Exploring)` | `cartographer_node`, `explore_lite_node`, `nav2_planner`, `nav2_controller` | `cartographer_localization_mode` |
 | **2. 地图落盘触发** | `Transitioning` | 调用服务将 `.pbstream` 与 `.yaml` 写入 `adam_assets` | 无 |
 | **3. 已知图纯定位导航** | `Active (Navigating)` | `cartographer_localization_mode`, `nav2_planner`, `nav2_controller` | `explore_lite_node`, `cartographer_mapping_mode` |
+
+### 5.4 传感器健康度监控与算法退化降级
+
+高精视觉/神经网络 SLAM（ORB-SLAM3、DROID-SLAM）在黑暗、低纹理或相机被遮挡场景下会发生跟踪丢失。中枢控制器必须内置传感器健康度监控机制：
+
+**协方差阈值监控**：
+- `adam_localization` 的 `dual_ekf_node` 持续监听各路里程计输入的位姿协方差矩阵。
+- 当视觉里程计协方差对角元素连续 N 帧（N 可配置，默认 10 帧 @ 30Hz）超过阈值 `cov_threshold`，`dual_ekf_node` 发布 `sensor_health/vision_lost` 事件。
+
+**自动降级流程**：
+```
+[sensor_health/vision_lost 事件触发]
+        │
+        ▼
+adam_hub_controller 收到事件
+        │
+        ├──► 将全局定位源从 VO/LIO 无缝切换至纯轮速计 + IMU EKF
+        │
+        ├──► 触发 Nav2 Behavior Tree 的 ClearCostmapRecovery（清除可能因错误位姿产生的代价图残影）
+        │
+        ├──► 通过 /adam_hub/sensor_status 话题向上层（APP/Web/VLN）上报 "视觉丢失，已降级至激光/轮速计模式"
+        │
+        └──► 持续监控视觉协方差，一旦恢复至阈值内，自动切回融合模式
+```
+
+此机制确保任何一路传感器 Lost 时，整车不会瞬间失控撞墙，而是优雅降级至更保守的导航模式。
 
 ---
 
@@ -382,6 +454,7 @@ sudo apt install ros-humble-pointcloud-to-laserscan
 | m-explore (explore_lite) | https://github.com/hrnr/m-explore/tree/ros2 | 基于边界前沿的无图自主探索 |
 | Navigation2 (Nav2) | https://github.com/ros-navigation/navigation2 | Smac 规划器 + MPPI 控制器 |
 | FAST-LIO | https://github.com/hku-mars/FAST_LIO | 3D Mid360 前端雷达惯导里程计 |
+| | _⚠ 注意：官方仓库已停更，仅支持 ROS1。必须使用社区 ROS2 移植分支（如 `EmarUn/fast_lio_rviz` 或 `lifegpc/FAST_LIO`），并在 ROS2 Humble 上验证编译通过后再集成_ | |
 | STVL | https://github.com/SteveMacenski/spatio_temporal_voxel_layer | 3D 动态体素时空衰减 |
 | Pointcloud to Laserscan | https://github.com/ros-perception/pointcloud_to_laserscan | 3D 点云降维投影 |
 
@@ -392,6 +465,7 @@ sudo apt install ros-humble-pointcloud-to-laserscan
 | ORB-SLAM3 ROS2 | https://github.com/thien94/ORB_SLAM3_ROS2 | 双目/单目惯导高精 VSLAM |
 | VINS-Mono ROS2 | https://github.com/TechColonial/VINS-Mono-ROS2 | 滑动窗口优化 VIO 备选 |
 | DROID-SLAM | https://github.com/princeton-vl/DROID-SLAM | 端到端稠密光流神经网络 SLAM |
+| | _⚠ 架构约束：DROID-SLAM 官方基于 PyTorch，Python GIL 锁会导致 ROS2 回调阻塞。必须采用独立 C++ 推理进程（TensorRT 加速版）通过共享内存（Shared Memory）与 ROS2 节点通信。禁止在 ROS2 回调函数中直接执行神经网络推理_ | |
 | RTAB-Map ROS2 | https://github.com/introlab/rtabmap_ros | 视觉稠密回环检测与地图桥接 |
 
 ### 8.3 AI 决策核心
