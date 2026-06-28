@@ -372,43 +372,102 @@ robot_adam/                          # 统一的 ROS2 工作空间根目录
 
 ---
 
-## 7. Bottom-Up 工程实现阶段拆解 (Implementation Roadmap)
+## 7. 系统最小原子模块拆解 (Atomized Modules)
 
-秉承"最简闭环、小步快跑、层层递进"的原则，将开发计划拆解为 **4 个里程碑（Milestones）**。
+整个顶层系统被拆解为以下 **21 个原子计算/配置单元**。每个单元都是一个独立的开发边界，可由 Sub-Agent 或独立研发工程师在 1~3 天内独立开发并单元测试。
 
-### 📅 Milestone 1: 基础设施打通与 2D 激光全栈 MVP (P0+P1)
+### 7.1 基础设施与资产层 (Infra & Assets)
 
-**目标**：在 Gazebo 仿真环境中，彻底跑通"常驻底盘 -> 自动探索建图 -> 地图序列化落盘至 `adam_assets` -> 二次开机一帧重定位 -> 纯导航"的扫地机核心闭环。
+| 单元 | 名称 | 描述 | 产出 |
+|------|------|------|------|
+| Unit 1.1 | `adam_assets` 骨架及 Ament 路由 | 创建纯静态资产 ROS2 包，编写 CMake 确保编译后本地路径可被 `ament_index_python` 检索 | 可编译分发的空资产包 |
+| Unit 1.2 | 2D 静态地图及描述文件 | 将仿真环境的 `.pgm` 与 `.yaml` 标准栅格地图入库 | 地图资产文件 |
+| Unit 1.3 | 相机内参与标定文件 | 仿真及真车相机的内参 `intrinsics.yaml` 格式定义与分流 | 标定资产文件 |
 
-**Bottom-Up 步骤**：
+### 7.2 状态估计与多源融合层 (Localization & Fusion)
 
-| 步骤 | 任务 | 产出 |
-|------|------|------|
-| 1.1 | 创建 `adam_assets` 包架构，编写 `CMakeLists.txt` 与 `package.xml` | 可编译分发的空资产包 |
-| 1.2 | 在 `adam_localization` 中编写 `ekf_nav_filter.yaml`，融合车轮里程计 + IMU | 在 Rviz 中观察到 `odom -> base_link` 绝对平滑无抖动 |
-| 1.3 | 编写 `adam_hub_controller` 骨架：Lifecycle 节点 + 状态机 + 模式切换服务 | 可运行的中枢控制器 |
-| 1.4 | 配置 Cartographer 2D 参数 + `explore_lite` 参数，通过中枢一键启动 | 小车在 `bigH.world` 中自主探索并吐出栅格图 |
-| 1.5 | 实现地图保存服务，将 `.pbstream` 存入 `adam_assets`；二次开机验证分支定界一帧重定位 | map -> odom 瞬间对齐 |
+| 单元 | 名称 | 描述 | 产出 |
+|------|------|------|------|
+| Unit 2.1 | 基础轮速/IMU EKF 滤波器 | 配置首层 `robot_localization` 节点，融合底盘 `/odom` 和 `/imu/data`，输出平滑的 `odom -> base_link` 变换 | `ekf_nav_filter.yaml` |
+| Unit 2.2 | 外部定位话题解耦接口 | 通用位姿接收适配器（Pose Relay），将 SLAM/VSLAM 的绝对位姿转换为 EKF 可消费的标准 Odom 格式 | `pose_relay_node.py` |
+| Unit 2.3 | 终极全局 EKF 滤波器 | 第二层 EKF，专门融合基础里程计与外部高层全局定位源，发布唯一的 `map -> odom` TF 树 | 第二层 EKF 配置 |
+
+### 7.3 中枢控制器与生命周期层 (Hub Control & Lifecycle)
+
+| 单元 | 名称 | 描述 | 产出 |
+|------|------|------|------|
+| Unit 3.1 | Lifecycle 节点状态机骨架 | 基于 `rclpy_lifecycle` 编写中枢节点，实现 `on_configure`, `on_activate`, `on_deactivate` 标准状态跳转 | `hub_manager_node.py` |
+| Unit 3.2 | 模式切换服务接口 (`switch_mode`) | 实现 `/adam_hub/switch_mode` 服务，内部维护枚举状态机 | Service + state_machine.py |
+| Unit 3.3 | 资产归档与序列化控制器 (`save_current_map`) | OS 级文件操作逻辑，接收底层 SLAM 吐出的零散地图，搬运至 `adam_assets` 源码目录 | `archive_map.py` |
+
+### 7.4 几何/视觉/神经网络算法链路层 (Algorithms Stack)
+
+| 单元 | 名称 | 描述 | 产出 |
+|------|------|------|------|
+| Unit 4.1 | Cartographer 2D 激光建图配置 | 编写 2D 建图的 `.lua` 文件与建图启动 Launch | `cartographer_mapping.launch.py` |
+| Unit 4.2 | Cartographer 2D 纯定位配置 | 编写分支定界全局扫描匹配参数，实现开机一帧重定位 | `cartographer_localization.launch.py` |
+| Unit 4.3 | `explore_lite` 前沿探索适配 | 配置边界提取与信息增益参数，使其能动态消费 Cartographer 的实时 `/map` | `explore_autonomous.launch.py` |
+| Unit 4.4 | FAST-LIO2 Humble 移植编译与调优 | 确保 3D 雷达和内嵌 IMU 紧耦合运行，输出高频 3D 状态估计 | `fast_lio_odometry.launch.py` |
+| Unit 4.5 | `pointcloud_to_laserscan` 切片配置 | 将 3D 雷达点云在指定高度切片，发布 `/scan_3d_projected` | 降维投影 Launch |
+| Unit 4.6 | Nav2 STVL 插件集成 | 在 Nav2 中挂载时空体素层，配置体素长宽高及时间衰减因子 | STVL Nav2 参数 |
+| Unit 4.7 | ORB-SLAM3 词袋与 VIO 链路 | 编译 C++ 包装层，加载 `.bin` 词袋，输出纯视觉高精里程计 | `orbslam3_vio.launch.py` |
+| Unit 4.8 | DROID-SLAM 稠密光流推理外壳 | 编写 C++ 共享内存进程（TensorRT），实时消费图像并推理三维网格 | `droid_slam_node.py` |
+| Unit 4.9 | `grid_projector` 稠密网格投影器 | 自研节点，将神经 SLAM 吐出的 3D 网格压缩为 2D Costmap 占用栅格 | `grid_projector.py` |
+
+### 7.5 具身智能语义层 (VLN & AI)
+
+| 单元 | 名称 | 描述 | 产出 |
+|------|------|------|------|
+| Unit 5.1 | YOLO 目标识别与 3D 边界框解算 | 识别物体并将 2D 像素框通过深度/雷达数据投影到 3D 机器人坐标系 | `yolo_detector.launch.py` |
+| Unit 5.2 | 语义拓扑字典维护节点 | 动态更新内存中 [标签 <-> 空间坐标] 字典，提供增删改查 Service | `semantic_map.py` |
+| Unit 5.3 | Ollama 接口适配与 Prompt 解析器 | 接收自然语言，通过结构化 Prompt 强制大模型输出 JSON 格式任务动作树 | `llm_reasoner.py` |
+
+---
+
+## 8. Bottom-Up 路线图：原子单元依赖与构建顺序
+
+根据"依赖最少先动工，核心功能先闭环"的原则，21 个原子单元按以下 **5 个阶段**依次推进。
+
+### 📅 阶段一：筑基行动（打通全局常驻层与状态估计）—— 预计 2 天
+
+> **开发顺序**：`Unit 1.1` → `Unit 2.1` → `Unit 3.1` + `Unit 3.2`
+
+| 步 | 单元 | 任务 | 独立产出 |
+|----|------|------|---------|
+| 1 | Unit 1.1 | 创建 `adam_assets` 资产包骨架，确保 `$(find adam_assets)` 可访问 | 可编译的静态资产包 |
+| 2 | Unit 2.1 | 配置底层基础 EKF 滤波器，启动 Gazebo 让小车打滑，Rviz 中 `odom -> base_link` 绝无阶跃 | `ekf_nav_filter.yaml` |
+| 3 | Unit 3.1+3.2 | 编写中枢 Lifecycle 状态机骨架 + 切换 Service，`ros2 service call` 手动验证闭环 | `hub_manager_node.py` |
+
+### 📅 阶段二：打通 2D 激光 MVP（扫地机模式全线贯通）—— 预计 4 天
+
+> **开发顺序**：`Unit 4.1` → `Unit 4.3` → `Unit 3.3` → `Unit 4.2` → `Unit 2.2` + `Unit 2.3`
+
+| 步 | 单元 | 任务 | 独立产出 |
+|----|------|------|---------|
+| 4 | Unit 4.1 | 配置 Cartographer 2D 建图参数，接入 Gazebo 仿真雷达 | `cartographer_mapping.launch.py` |
+| 5 | Unit 4.3 | 接入 `explore_lite`，由中枢触发自动大范围探图 | `explore_autonomous.launch.py` |
+| 6 | Unit 3.3 | 实现 `/save_current_map` 资产落盘，检查地图存入 `adam_assets/maps_2d/` | `archive_map.py` |
+| 7 | Unit 4.2 | 配置 Cartographer 纯定位，验证开机一帧分支定界全局重定位 | `cartographer_localization.launch.py` |
+| 8 | Unit 2.2+2.3 | 编写 Pose Relay 适配器，配置全局 EKF 统一发布 `map -> odom` TF | 全局 EKF 闭环 |
 
 **依赖安装**：
 ```bash
 sudo apt install ros-humble-cartographer ros-humble-cartographer-ros
 sudo apt install ros-humble-navigation2 ros-humble-nav2-bringup
-# explore_lite 需要源码编译
+# explore_lite 需源码编译
 ```
 
-### 📅 Milestone 2: 空间升维与 3D 立体避障 (P2)
+**→ 此时系统已获得一个完美的 2D 闭环产品。**
 
-**目标**：物理常驻雷达由 2D 切换为 3D 固态雷达 Mid360，解决悬空障碍物和动态人流过后的"幽灵残影"问题。
+### 📅 阶段三：空间多维防撞升级（3D 激光与立体避障）—— 预计 3 天
 
-**Bottom-Up 步骤**：
+> **开发顺序**：`Unit 4.4` → `Unit 4.5` → `Unit 4.6`
 
-| 步骤 | 任务 | 产出 |
-|------|------|------|
-| 2.1 | 源码编译并配置 FAST-LIO2，对接 Mid360 仿真点云 + IMU | 输出 >100Hz 高频 `/odom_3d` |
-| 2.2 | 在 Nav2 配置中将 2D Costmap 插件替换为 STVL | 3D 体素代价图 |
-| 2.3 | 调整 STVL 的 `voxel_decay` 时间参数，验证体素自动消散 | 动态障碍物残影消失 |
-| 2.4 | 启动 `pointcloud_to_laserscan` 为全局规划器提供低维 `/scan_3d_projected` | 2D 伪激光话题 |
+| 步 | 单元 | 任务 | 独立产出 |
+|----|------|------|---------|
+| 9 | Unit 4.4 | 源码编译 FAST-LIO2 Humble 移植版，对接 Mid360 仿真 | `fast_lio_odometry.launch.py` |
+| 10 | Unit 4.5 | 启动 `pointcloud_to_laserscan`，切片投影 3D 点云为 `/scan_3d_projected` | 降维 Launch |
+| 11 | Unit 4.6 | 配置 Nav2 STVL 时空体素层，调优 `voxel_decay` 确保残影 1.0s 消散 | STVL 参数 YAML |
 
 **依赖安装**：
 ```bash
@@ -416,37 +475,64 @@ sudo apt install ros-humble-pointcloud-to-laserscan
 # FAST-LIO2 与 STVL 需源码编译
 ```
 
-### 📅 Milestone 3: 特征固化与多模态视觉导航栈 (P3)
+### 📅 阶段四：视觉多模态与神经网络 SLAM 接入 —— 预计 4 天
 
-**目标**：引入传统 VSLAM 的强回环能力与神经网络 SLAM 的极端鲁棒性，彻底解决激光雷达在低几何特征场景下的退化问题。
+> **开发顺序**：`Unit 1.3` → `Unit 4.7` → `Unit 4.8` → `Unit 4.9`
 
-**Bottom-Up 步骤**：
+| 步 | 单元 | 任务 | 独立产出 |
+|----|------|------|---------|
+| 12 | Unit 1.3 | 注入相机内参资产至 `adam_assets/camera_calibration/` | 标定 YAML |
+| 13 | Unit 4.7 | 跑通 ORB-SLAM3 VIO 链路，Rviz 中观察词袋回环检测轨迹修正 | `orbslam3_vio.launch.py` |
+| 14 | Unit 4.8 | 部署 DROID-SLAM 神经网络推理壳，GPU 跑通稠密光流跟踪 | `droid_slam_node.py` |
+| 15 | Unit 4.9 | 编写 `grid_projector`，将 3D 网格压缩为 2D Costmap 占用栅格 | `grid_projector.py` |
 
-| 步骤 | 任务 | 产出 |
-|------|------|------|
-| 3.1 | 将相机内参文件标准化写入 `adam_assets/camera_calibration/` | 标定资产入库 |
-| 3.2 | 编译 ORB-SLAM3 ROS2 封装，加载词袋文件，验证仿真环境中视觉重定位 | 视觉里程计闭环 |
-| 3.3 | 配置 GPU 加载 DROID-SLAM 推理内核，编写 `grid_projector` 节点 | 神经网络稠密跟踪闭环 |
-| 3.4 | 在 `adam_localization` 中开启第二个 EKF 实例，融合激光/视觉/神经里程计 + 轮速计 | 多源绝对不丢失里程计基座 |
+### 📅 阶段五：语义拓扑与大模型具身大脑 —— 预计 3 天
 
-### 📅 Milestone 4: 具身智能脑眼协同与大模型 VLN (P4)
+> **开发顺序**：`Unit 5.1` → `Unit 5.2` → `Unit 5.3`
 
-**目标**：机器人具备"听懂人话、看懂世界、自主拆解、精准导航"的具身智能完全体形态。
-
-**Bottom-Up 步骤**：
-
-| 步骤 | 任务 | 产出 |
-|------|------|------|
-| 4.1 | 启动 YOLOv11/YOLO-World 节点，消费单目/双目图像流 | 实时开放域目标检测 |
-| 4.2 | 在 `semantic_map.py` 中编写 3D 射线投影算法，将 2D 边界框与深度数据结合解算物体 3D 坐标 | 动态写入 `adam_assets/maps_semantic/` |
-| 4.3 | 拉起 Ollama (Qwen-2.5)，编写系统提示词强制输出标准 JSON 任务树 | 自然语言 -> 原子任务分解 |
-| 4.4 | 打通全链条：大模型解析 -> 中枢控制器 -> 底层导航栈 | 机器人自主导航至目标物体 |
+| 步 | 单元 | 任务 | 独立产出 |
+|----|------|------|---------|
+| 16 | Unit 5.1 | 打通 YOLO 目标识别与 3D 边界框解算 | `yolo_detector.launch.py` |
+| 17 | Unit 5.2 | 实现语义拓扑字典，实时持久化写入 `adam_assets/maps_semantic/` | `semantic_map.py` |
+| 18 | Unit 5.3 | 编写 Ollama Prompt 适配器，输出 JSON 任务树驱动 Nav2 Action | `llm_reasoner.py` |
 
 ---
 
-## 8. 依赖及相关开源仓库
+## 9. 原子单元依赖关系图
 
-### 8.1 2D/3D 激光与自主探索
+```dot
+digraph atomized_phases {
+    rankdir=TB;
+    node [shape=box style=filled];
+
+    P1 [label="阶段一：筑基行动\nUnit 1.1 → 2.1 → 3.1+3.2\n~2天" fillcolor="#90EE90"];
+    P2 [label="阶段二：2D 激光 MVP\nUnit 4.1 → 4.3 → 3.3 → 4.2 → 2.2+2.3\n~4天" fillcolor="#90EE90"];
+    P3 [label="阶段三：3D 立体避障\nUnit 4.4 → 4.5 → 4.6\n~3天" fillcolor="#FFD700"];
+    P4 [label="阶段四：视觉多模态\nUnit 1.3 → 4.7 → 4.8 → 4.9\n~4天" fillcolor="#FFA500"];
+    P5 [label="阶段五：VLN 具身智能\nUnit 5.1 → 5.2 → 5.3\n~3天" fillcolor="#FF6B6B"];
+
+    P1 -> P2 [label="资产包+EKF+中枢基座"];
+    P2 -> P3 [label="2D MVP 常驻层共用"];
+    P2 -> P4 [label="2D MVP 中枢+EKF 基座"];
+    P3 -> P4 [label="3D 避障基座"];
+    P4 -> P5 [label="定位基座+感知基座"];
+}
+```
+
+| 阶段 | 范围 | 工期 | 里程碑产出 |
+|------|------|------|-----------|
+| **一：筑基行动** | Unit 1.1, 2.1, 3.1, 3.2 | ~2 天 | `adam_assets` 骨架 + 基础 EKF + 中枢状态机 |
+| **二：2D 激光 MVP** | Unit 4.1, 4.3, 3.3, 4.2, 2.2, 2.3 | ~4 天 | 扫地机核心闭环：探索→建图→落盘→重定位→导航 |
+| **三：3D 立体避障** | Unit 4.4, 4.5, 4.6 | ~3 天 | Mid360 + STVL 时空体素避障 |
+| **四：视觉多模态** | Unit 1.3, 4.7, 4.8, 4.9 | ~4 天 | ORB-SLAM3 + DROID-SLAM + 网格投影 |
+| **五：VLN 具身智能** | Unit 5.1, 5.2, 5.3 | ~3 天 | YOLO + 语义拓扑 + Ollama 任务拆解 |
+| **总计** | **21 个原子单元** | **~16 天** | **全栈系统交付** |
+
+---
+
+## 10. 依赖及相关开源仓库
+
+### 10.1 2D/3D 激光与自主探索
 
 | 仓库 | 链接 | 用途 |
 |------|------|------|
@@ -458,7 +544,7 @@ sudo apt install ros-humble-pointcloud-to-laserscan
 | STVL | https://github.com/SteveMacenski/spatio_temporal_voxel_layer | 3D 动态体素时空衰减 |
 | Pointcloud to Laserscan | https://github.com/ros-perception/pointcloud_to_laserscan | 3D 点云降维投影 |
 
-### 8.2 传统与神经网络视觉 SLAM
+### 10.2 传统与神经网络视觉 SLAM
 
 | 仓库 | 链接 | 用途 |
 |------|------|------|
@@ -468,34 +554,9 @@ sudo apt install ros-humble-pointcloud-to-laserscan
 | | _⚠ 架构约束：DROID-SLAM 官方基于 PyTorch，Python GIL 锁会导致 ROS2 回调阻塞。必须采用独立 C++ 推理进程（TensorRT 加速版）通过共享内存（Shared Memory）与 ROS2 节点通信。禁止在 ROS2 回调函数中直接执行神经网络推理_ | |
 | RTAB-Map ROS2 | https://github.com/introlab/rtabmap_ros | 视觉稠密回环检测与地图桥接 |
 
-### 8.3 AI 决策核心
+### 10.3 AI 决策核心
 
 | 仓库 | 链接 | 用途 |
 |------|------|------|
 | Ultralytics YOLO | https://github.com/ultralytics/ultralytics | YOLOv11/World 实时开放域目标检测 |
 | Ollama | https://github.com/ollama/ollama | 本地大模型推理框架 |
-
----
-
-## 9. 里程碑优先级与依赖关系图
-
-```dot
-digraph milestones {
-    rankdir=TB;
-
-    M1 [label="Milestone 1\n2D 激光全栈 MVP" shape=box style=filled fillcolor="#90EE90"];
-    M2 [label="Milestone 2\n3D 立体避障" shape=box style=filled fillcolor="#FFD700"];
-    M3 [label="Milestone 3\n多模态视觉导航" shape=box style=filled fillcolor="#FFA500"];
-    M4 [label="Milestone 4\nVLN 具身智能" shape=box style=filled fillcolor="#FF6B6B"];
-
-    M1 -> M2 [label="硬件常驻层共用"];
-    M1 -> M3 [label="中枢调度与 EKF 基座"];
-    M2 -> M3 [label="3D 避障基座"];
-    M3 -> M4 [label="定位基座+感知基座"];
-}
-```
-
-* **Milestone 1 (P0+P1)**：2D 激光全栈 MVP，最短路径跑通扫地机闭环。**起点。**
-* **Milestone 2 (P2)**：在 M1 的中枢与 EKF 基座上替换 3D 传感器。与 M3 可并行准备。
-* **Milestone 3 (P3)**：在 M1 的中枢调度与 EKF 基座上接入视觉 SLAM。**依赖 M1。**
-* **Milestone 4 (P4)**：在 M1+M2+M3 的完整定位基座上叠加 AI 决策层。**依赖所有前序里程碑。**
