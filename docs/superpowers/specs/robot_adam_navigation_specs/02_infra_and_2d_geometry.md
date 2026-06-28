@@ -80,17 +80,41 @@ adam_assets/
 
 ### 📦 Unit 2: 基础里程计底座 EKF
 
-**功能描述**：融合底盘轮速里程计 `/odom` 与高频 IMU `/imu/data`，消除物理层打滑产生的随机误差，发布平滑的 `odom -> base_link` TF 树。
+**功能描述**：融合底盘轮速里程计 `/odom_raw` 与高频 IMU `/imu/data`，消除物理层打滑产生的随机误差，发布平滑的 `odom -> base_link` TF 树。
 
-**输入依赖**：`robot_description` 发布的 `/odom`（轮速）与 `/imu/data` 话题。
+**输入依赖**：`robot_description` 发布的 `/odom_raw`（原始轮速里程计，≥50Hz 编码器解算，包含 `Twist` 速度和累计 `Pose`）与 `/imu/data`（高频 IMU 话题）。
+
+**数据流动拓扑**：
+```
+底盘 MCU 编码器 → /odom_raw (Twist+Pose, ≥50Hz)
+                              ↓
+IMU 传感器       → /imu/data (angular_velocity + linear_acceleration)
+                              ↓
+                    local_ekf_node (robot_localization)
+                              ↓
+              发布唯一 odom → base_link TF (≥50Hz, 绝对连续)
+```
+
+**参数约束（硬性规格）**：
+- `ekf_local.yaml` 中，轮速计配置 `odom0_config`：融合 `Pose (x, y)` 和 `Twist (angular_z)`，共 3 自由度
+- IMU 配置 `imu0_config`：融合 `angular_velocity (z)` 和 `linear_acceleration (x, y)`，提供高频姿态阻尼
+- **必须关闭任何 SLAM 节点的直接 TF 广播**：Cartographer 的 `provide_odom_frame` 必须设为 `false`
+- `local_ekf_node` 常驻且**唯一广播** `odom -> base_link` TF
+- `differential`：`false`（输出绝对连续位姿，不依赖差分模式）
+
+**退化协方差保护逻辑**：
+- 在本期（2D 阶段），Cartographer 纯定位输出的 `/cartographer_pose` 通过 Pose Relay 适配器以**显式高协方差**喂给第二层 `global_ekf_node`
+- `global_ekf_node` 负责发布唯一的 `map -> odom` TF
+- 当 Cartographer 定位协方差超限时，`global_ekf_node` 自动向底层轮速计 + IMU EKF 权重倾斜，确保即使定位漂移也不会导致底盘瞬移
 
 **产出物**：
 - `config/ekf_local.yaml`：首层 `robot_localization` EKF 节点配置
+- `config/ekf_global.yaml`：第二层全局 EKF 节点配置（融合 Cartographer 位姿）
 - `launch/ekf_localization.launch.py`：启动脚本
 - 关键参数：
-  - `odom0`：`/odom`（轮速里程计话题）
+  - `odom0`：`/odom_raw`（轮速里程计话题）
   - `imu0`：`/imu/data`（IMU 话题）
-  - `differential`：`false`（输出绝对连续位姿）
+  - `differential`：`false`
   - `odom0_config`：`[true, true, false, false, false, false, false, false, false, false, false, true, false, false, false]`
   - `imu0_config`：`[false, false, false, false, false, true, false, false, false, false, false, false, false, false, false]`
 
