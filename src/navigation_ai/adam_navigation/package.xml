@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>adam_navigation</name>
+  <version>1.0.0</version>
+  <description>Nav2 navigation stack integration for Robot Adam</description>
+  <maintainer email="adam@example.com">Adam Team</maintainer>
+  <license>MIT</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>nav2_common</buildtool_depend>
+  <depend>nav2_bringup</depend>
+  <depend>nav2_smac_planner</depend>
+  <depend>nav2_mppi_controller</depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

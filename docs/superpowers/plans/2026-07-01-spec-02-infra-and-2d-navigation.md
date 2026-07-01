@@ -35,7 +35,7 @@ src/
 │   ├── adam_slam/package.xml
 │   ├── adam_slam/config/cartographer_2d.lua
 │   ├── adam_slam/config/cartographer_localization.lua
-│   ├── adam_slam/config/explore_lite.yaml
+│   ├── adam_slam/config/custom_explorer.yaml
 │   ├── adam_slam/launch/cartographer_2d.launch.py
 │   ├── adam_slam/launch/cartographer_localization.launch.py
 │   └── adam_slam/scripts/archive_map.py
@@ -345,14 +345,14 @@ src/
 
 ---
 
-### Task 4: adam_slam —— Cartographer 建图 + explore_lite 自主探索
+### Task 4: adam_slam —— Cartographer 建图 + custom_explorer 自主探索
 
 **Files:**
 - Create: `src/localization_mapping/adam_slam/CMakeLists.txt`
 - Create: `src/localization_mapping/adam_slam/package.xml`
 - Create: `src/localization_mapping/adam_slam/config/cartographer_2d.lua`
 - Create: `src/localization_mapping/adam_slam/config/cartographer_localization.lua`
-- Create: `src/localization_mapping/adam_slam/config/explore_lite.yaml`
+- Create: `src/localization_mapping/adam_slam/config/custom_explorer.yaml`
 - Create: `src/localization_mapping/adam_slam/launch/cartographer_2d.launch.py`
 - Create: `src/localization_mapping/adam_slam/launch/cartographer_localization.launch.py`
 - Create: `src/localization_mapping/adam_slam/scripts/archive_map.py`
@@ -380,7 +380,7 @@ src/
     <buildtool_depend>ament_cmake</buildtool_depend>
     <depend>cartographer_ros</depend>
     <depend>nav_msgs</depend>
-    <exec_depend>explore_lite</exec_depend>
+    <exec_depend>custom_explorer</exec_depend>
     <export>
       <build_type>ament_cmake</build_type>
     </export>
@@ -489,24 +489,21 @@ src/
   }
   ```
 
-- [ ] **Step 4: 编写 explore_lite 配置**
+- [ ] **Step 4: 编写 custom_explorer 配置**
 
-  `config/explore_lite.yaml`:
+  `config/custom_explorer.yaml`:
   ```yaml
-  explore_lite:
+  custom_explorer:
     ros__parameters:
-      exploration_radius: 3.0
-      min_frontier_size: 10
-      potential_scale: 1e-4
-      gain_scale: 1.0
-      transform_tolerance: 0.1
+      exploration_frequency: 1.0
+      visualize_frontiers: true
+      frontier_queue_size: 10
   ```
 
 - [ ] **Step 5: 编写建图 launch 文件**
 
   `launch/cartographer_2d.launch.py`:
   ```python
-  import os
   from launch import LaunchDescription
   from launch_ros.actions import Node
   from launch.actions import IncludeLaunchDescription
@@ -536,20 +533,18 @@ src/
           arguments=['-resolution', '0.05', '-publish_period_sec', '1.0'],
       )
 
-      explore_lite = IncludeLaunchDescription(
-          PythonLaunchDescriptionSource([
-              get_package_share_directory('explore_lite'),
-              '/launch', '/explore.launch.py'
-          ]),
-          launch_arguments={
-              'params_file': config_dir + '/config/explore_lite.yaml',
-          }.items()
+      explorer_node = Node(
+          package='custom_explorer',
+          executable='explorer',
+          name='explorer_node',
+          parameters=[config_dir + '/config/custom_explorer.yaml'],
+          output='screen',
       )
 
       return LaunchDescription([
           cartographer_node,
           occupancy_grid_node,
-          explore_lite,
+          explorer_node,
       ])
   ```
 
@@ -662,7 +657,7 @@ src/
 
   ```bash
   git add src/localization_mapping/adam_slam/
-  git commit -m "feat: add adam_slam with Cartographer 2D mapping + explore_lite + archive script
+  git commit -m "feat: add adam_slam with Cartographer 2D mapping + custom_explorer + archive script
 
   Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
   ```
@@ -874,7 +869,7 @@ src/
   """一键启动 SPEC 02 全栈：Gazebo + EKF + Cartographer + Nav2 + test_tools。
 
   启动模式:
-    mode=mapping    — 建图模式 (默认): Cartographer 建图 + explore_lite
+    mode=mapping    — 建图模式 (默认): Cartographer 建图 + custom_explorer
     mode=localize   — 纯定位模式: Cartographer 加载 pbstream 定位 + Nav2
   """
   from launch import LaunchDescription

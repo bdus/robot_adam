@@ -25,7 +25,7 @@
 
 ### 📦 Unit 1: adam_hub_controller 生命周期状态机托管中枢
 
-**功能描述**：基于标准 `rclcpp_lifecycle` 编写核心总控节点。它不参与任何运动学计算，但死死管住底层各路算法（Cartographer、explore_lite、Nav2、FAST-LIO2）的启动与死活，根除因多算法竞态冲突导致的 TF 树穿孔。
+**功能描述**：基于标准 `rclcpp_lifecycle` 编写核心总控节点。它不参与任何运动学计算，但死死管住底层各路算法（Cartographer、custom_explorer、Nav2、FAST-LIO2）的启动与死活，根除因多算法竞态冲突导致的 TF 树穿孔。
 
 > **地图归档统一调度**：`/adam_hub/save_current_map` 是收官阶段的统一地图归档入口。中枢接收到此请求后，dispatch 到当前活跃 SLAM 算法的专属保存接口（Cartographer → `/write_state` `.pbstream`、ORB-SLAM3 → `SaveMap` `.osa`、DROID-SLAM → mesh）。各算法的持久化在 SPEC 02~04 各自独立实现，互不耦合。本单元仅定义调度框架。
 
@@ -33,8 +33,8 @@
 
 提供一个标准的控制服务接口 `/adam_hub/switch_mode`（自定义服务类型，含 `target_mode` 字段）：
 
-- **Mode 1: `MAPPING_EXPLORE`（探索建图模式）**：中枢驱动底层 Lifecycle 子节点跳转，触发 FAST-LIO2 和 explore_lite 进入 `Active` 状态。
-- **Mode 2: `KNOWN_MAP_NAV`（已知图导航模式）**：中枢强行将 explore_lite 切换为 `Unconfigured`（彻底杀死释放算力），劫持 Cartographer 的服务将其一键切换为纯定位参数配置，并将 Nav2 状态动态唤醒至 `Active` 状态。
+- **Mode 1: `MAPPING_EXPLORE`（探索建图模式）**：中枢驱动底层 Lifecycle 子节点跳转，触发 FAST-LIO2 和 custom_explorer 进入 `Active` 状态。
+- **Mode 2: `KNOWN_MAP_NAV`（已知图导航模式）**：中枢强行将 custom_explorer 切换为 `Unconfigured`（彻底杀死释放算力），劫持 Cartographer 的服务将其一键切换为纯定位参数配置，并将 Nav2 状态动态唤醒至 `Active` 状态。
 
 **状态机核心逻辑**：
 ```
@@ -44,12 +44,12 @@
 [Inactive] (中枢就绪，静默等待指令)
     │
     ├──► on_activate() [MAPPING_EXPLORE 模式]
-    │      激活: cartographer_mapping, explore_lite, fast_lio2
+    │      激活: cartographer_mapping, custom_explorer, fast_lio2
     │      挂起: cartographer_localization, nav2
     │
     ├──► on_activate() [KNOWN_MAP_NAV 模式]
     │      激活: cartographer_localization, nav2
-    │      挂起: cartographer_mapping, explore_lite
+    │      挂起: cartographer_mapping, custom_explorer
     │
     └──► on_activate() [3D_AVOIDANCE 模式]
            激活: fast_lio2, stvl_costmap, nav2_3d
@@ -199,7 +199,7 @@ $$P_c = \begin{bmatrix} X_c \\ Y_c \\ Z_c \end{bmatrix} = \begin{bmatrix} (u - c
 **验收方案与白盒标准（Gate 1）**：
 
 1. **状态机跳转验证**：使用 `ros2 lifecycle list` 检查，每次模式切换时，涉及的子节点必须能平滑、无死锁地执行 `Configuring` → `Activating` → `Deactivating` 的状态迁移。
-2. **★ 零 Ghost 进程冲突铁律 ★**：切换到已知图导航模式时，`explore_lite` 必须确保被 100% 挂起或销毁，`/cmd_vel` 的控制权被完全收拢到 Nav2 控制器手中。**在连续 50 次高频模式劫持测试中，整个系统的 TF 树绝不允许发生任何短暂的一帧穿孔、重叠或抛出 "Transform timeout" 指针异常，底层里程计数据流稳如磐石**。
+2. **★ 零 Ghost 进程冲突铁律 ★**：切换到已知图导航模式时，`custom_explorer` 必须确保被 100% 挂起或销毁，`/cmd_vel` 的控制权被完全收拢到 Nav2 控制器手中。**在连续 50 次高频模式劫持测试中，整个系统的 TF 树绝不允许发生任何短暂的一帧穿孔、重叠或抛出 "Transform timeout" 指针异常，底层里程计数据流稳如磐石**。
 
 ---
 

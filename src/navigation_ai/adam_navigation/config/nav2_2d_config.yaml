@@ -1,0 +1,94 @@
+planner_server:
+  ros__parameters:
+    use_sim_time: true
+    planner_plugin_types: ["nav2_smac_planner/SmacPlanner2D"]
+    SmacPlanner2D:
+      downsample_costmap: false
+      tolerance: 0.25
+      allow_unknown: false
+      max_iterations: 1000000
+      smooth_path: true
+
+controller_server:
+  ros__parameters:
+    use_sim_time: true
+    controller_plugin_types: ["nav2_mppi_controller/MppIController"]
+    MppIController:
+      motion_model: "DiffDrive"
+      time_steps: 56
+      model_dt: 0.1
+      batch_size: 500
+      temperature: 0.3
+      vx_max: 0.5
+      vx_min: -0.2
+      vy_max: 0.0
+      wz_max: 0.8
+      enable_obstacle_collision_check: true
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      use_sim_time: true
+      global_frame: odom
+      robot_base_frame: base_link
+      rolling_window: true
+      width: 3
+      height: 3
+      resolution: 0.05
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 0.5
+          clearing: true
+          marking: true
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.55
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      use_sim_time: true
+      global_frame: map
+      robot_base_frame: base_link
+      static_map: true
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: true
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 0.5
+          clearing: true
+          marking: true
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.55
+
+bt_navigator:
+  ros__parameters:
+    use_sim_time: true
+    default_nav_to_pose_bt_xml: "navigate_to_pose_w_recovery_and_remapping.xml"
+
+amcl:
+  ros__parameters:
+    use_sim_time: true
+    # Disable AMCL — we use Cartographer for localization in SPEC 02
+    # (AMCL remains available as fallback but is not the primary method)
+
+map_server:
+  ros__parameters:
+    use_sim_time: true
+    # Cartographer's occupancy_grid_node provides /map directly,
+    # so map_server is not needed for SPEC 02.
+    # Include it for optional .yaml/.pgm loading in standalone mode.

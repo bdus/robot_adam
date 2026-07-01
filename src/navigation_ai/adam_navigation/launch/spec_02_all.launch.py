@@ -1,7 +1,7 @@
 """一键启动 SPEC 02 全栈：Gazebo + EKF + Cartographer + Nav2 + test_tools。
 
 启动模式:
-  mode=mapping    — 建图模式 (默认): Cartographer 建图 + explore_lite
+  mode=mapping    — 建图模式 (默认): Cartographer 建图 + 自主探索
   mode=localize   — 纯定位模式: Cartographer 加载 pbstream 定位 + Nav2
 """
 from launch import LaunchDescription
@@ -9,6 +9,7 @@ from launch.substitutions import LaunchConfiguration
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, GroupAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.conditions import IfCondition
+from launch.substitutions import PythonExpression
 from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
@@ -42,7 +43,7 @@ def generate_launch_description():
 
         # L3: Cartographer (建图模式)
         GroupAction(
-            condition=IfCondition(LaunchConfiguration('mode') == 'mapping'),
+            condition=IfCondition(PythonExpression(['"', LaunchConfiguration('mode'), '" == "mapping"'])),
             actions=[
                 IncludeLaunchDescription(
                     PythonLaunchDescriptionSource(
@@ -54,7 +55,7 @@ def generate_launch_description():
 
         # L3: Cartographer (纯定位模式)
         GroupAction(
-            condition=IfCondition(LaunchConfiguration('mode') == 'localize'),
+            condition=IfCondition(PythonExpression(['"', LaunchConfiguration('mode'), '" == "localize"'])),
             actions=[
                 IncludeLaunchDescription(
                     PythonLaunchDescriptionSource(

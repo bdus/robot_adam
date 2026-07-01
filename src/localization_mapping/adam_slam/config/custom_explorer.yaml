@@ -1,0 +1,5 @@
+custom_explorer:
+  ros__parameters:
+    exploration_frequency: 1.0
+    visualize_frontiers: true
+    frontier_queue_size: 10

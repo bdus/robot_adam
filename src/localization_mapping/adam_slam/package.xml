@@ -8,7 +8,7 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
   <depend>cartographer_ros</depend>
   <depend>nav_msgs</depend>
-  <exec_depend>explore_lite</exec_depend>
+  <exec_depend>custom_explorer</exec_depend>
   <export>
     <build_type>ament_cmake</build_type>
   </export>

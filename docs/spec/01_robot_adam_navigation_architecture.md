@@ -112,7 +112,7 @@ adam_navigation (L3)  ←  adam_bringup (L3)  ←  adam_hub_controller (L4)
 | --- | --- | --- |
 | **基础非结构化数据** | ROS2 `ament_index_python` 路由 | 资产集中式版本化管理，杜绝绝对路径硬编码 |
 | **底层状态估计** | `robot_localization` (Dual EKF) | 维护绝对连续、高频、死不断流的整车基础位姿感知 |
-| **2D 几何导航栈** | Cartographer + `explore_lite` + Nav2 | 跑通扫地机核心闭环：自动探图 → 归档 → 一帧重定位 → 寻路 |
+| **2D 几何导航栈** | Cartographer + `custom_explorer` + Nav2 | 跑通扫地机核心闭环：自动探图 → 归档 → 一帧重定位 → 寻路 |
 | **3D 空间几何栈** | FAST-LIO2 + `pointcloud_to_laserscan` | 点云高频状态估计，高度切片降维供全局寻路安全边界 |
 | **立体避障层** | Nav2 Costmap 3D + STVL 插件 | 基于 OpenVDB 结构与时空衰减机制，完美消除动态人流残影 |
 | **多模态视觉定位** | ORB-SLAM3 (Stereo-Inertial 模式) | 利用 DBoW 词袋模型提供极强的回环修正与拍照即锁死定位能力 |
@@ -135,7 +135,7 @@ adam_navigation (L3)  ←  adam_bringup (L3)  ←  adam_hub_controller (L4)
                                       ▼
     ┌─────────────────────────────────────────────────────────────────────┐
     │  SPEC 02: 基础设施与 2D 几何导航栈 (Working)                        │
-    │  资产骨架 → 双层 EKF → Cartographer 建图/定位 → explore_lite →     │
+    │  资产骨架 → 双层 EKF → Cartographer 建图/定位 → custom_explorer →     │
     │  地图归档 → 一帧重定位 → Nav2 闭环                                   │
     └─────────────────────────────────────────────────────────────────────┘
                                       │ 底层 2D 打通后升维 3D 空间
@@ -188,7 +188,7 @@ Level 1（驱动与仿真）与 Level 2（状态估计）属于常驻死忠层�
 | 文件 | 范围 | 状态 | 前置依赖 | 原子单元数 |
 |------|------|------|---------|-----------|
 | `01_robot_adam_navigation_architecture.md` | 宏观蓝图、分层、包结构 | **Released** | 无 | — |
-| `02_infra_and_2d_geometry.md` | adam_assets 骨架 + 2D EKF + Cartographer + explore_lite + Nav2 | **Working** | 01 | 6 |
+| `02_infra_and_2d_geometry.md` | adam_assets 骨架 + 2D EKF + Cartographer + custom_explorer + Nav2 | **Working** | 01 | 6 |
 | `03_3d_spatial_and_stvl.md` | FAST-LIO2 + pointcloud_to_laserscan + STVL 时空避障 | **Planned** | 02 | 3 |
 | `04_multimodal_vision_slam.md` | ORB-SLAM3 + DROID-SLAM + grid_projector + 终极 EKF 融合 | **Planned** | 02 | 4 |
 | `05_central_hub_and_vln.md` | Lifecycle 状态机 + YOLO + 语义拓扑 + Ollama VLN | **Planned** | 02+03+04 | 4 |
@@ -200,7 +200,7 @@ Level 1（驱动与仿真）与 Level 2（状态估计）属于常驻死忠层�
 | 分类 | 仓库 | 用途 | 维护状态 |
 |------|------|------|---------|
 | 2D SLAM | [Cartographer ROS2](https://github.com/ros2/cartographer_ros) | 2D 建图与分支定界重定位 | 活跃 |
-| 探索 | [m-explore (explore_lite)](https://github.com/hrnr/m-explore/tree/ros2) | 边界前沿无图探索 | 社区维护 |
+| 探索 | [Autonomous-Explorer-and-Mapper-ros2-nav2](https://github.com/AniArka/Autonomous-Explorer-and-Mapper-ros2-nav2) | 基于 Nav2 Action 的边界前沿自主探索 | 活跃 |
 | 导航 | [Navigation2](https://github.com/ros-navigation/navigation2) | Smac 规划器 + MPPI + BT | 活跃 |
 | 3D LIO | [FAST-LIO](https://github.com/hku-mars/FAST_LIO) | Mid360 雷达惯导里程计 | ⚠ 官方停更，需 ROS2 社区 fork |
 | 避障 | [STVL](https://github.com/SteveMacenski/spatio_temporal_voxel_layer) | 3D 时空体素衰减 | 维护中 |

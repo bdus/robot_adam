@@ -1,7 +1,0 @@
-explore_lite:
-  ros__parameters:
-    exploration_radius: 3.0
-    min_frontier_size: 10
-    potential_scale: 1e-4
-    gain_scale: 1.0
-    transform_tolerance: 0.1

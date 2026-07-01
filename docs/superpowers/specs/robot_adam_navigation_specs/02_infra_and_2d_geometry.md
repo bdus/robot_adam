@@ -2,7 +2,7 @@
 
 > **版本**: v1.2 | **日期**: 2026-06-28 | **状态**: Working
 > **存放目录**: `docs/superpowers/specs/robot_adam_navigation_specs/02_infra_and_2d_geometry.md`
-> **范围**：`adam_assets` 资产包骨架 + 基础双层 EKF 里程计 + Cartographer 2D 建图/纯定位 + `explore_lite` 自主探索 + Nav2 Smac/MPPI 运控级集成。
+> **范围**：`adam_assets` 资产包骨架 + 基础双层 EKF 里程计 + Cartographer 2D 建图/纯定位 + `custom_explorer` 自主探索 + Nav2 Smac/MPPI 运控级集成。
 > **关联总设计**：[`docs/spec/01_robot_adam_navigation_architecture.md`](../../../spec/01_robot_adam_navigation_architecture.md) — 本系列宏观架构纲领。
 > **前置依赖**：`SPEC 01`（宏观架构），`robot_description`（Level 1 仿真底盘变体及传感器话题已就绪）。
 > **基准测试变体**：`laser_2wd`。该变体挂载的 2D 激光雷达（`/scan`）和 IMU 已满足 2D 导航栈需求。`mid360_*` 等 3D 雷达变体属于 SPEC 03 范围。
@@ -125,7 +125,7 @@ map -> odom                  (global_ekf_node 独占广播，绝对位姿修正)
 
 ---
 
-### 📦 Unit 3: adam_slam 2D Cartographer 建图与 explore_lite 自动探索
+### 📦 Unit 3: adam_slam 2D Cartographer 建图与 custom_explorer 自动探索
 
 **功能描述**：驱动 2D 激光雷达进行局部子图（Submap）图优化，同时挂载边界前沿（Frontier）算法让小车在未知仿真环境中自动进行全范围探图。
 
@@ -135,7 +135,7 @@ map -> odom                  (global_ekf_node 独占广播，绝对位姿修正)
 
 - `tracking_frame = "base_link"`，`published_frame = "odom"`（注意：不准直接发布到 map）。
 - 激活 `use_odometry = true`，将 Unit 2 融合后的平滑里程计作为扫描匹配（Scan Matching）的空域中心先验。
-- 配置 `explore_lite`：最小边界像素长度设为 5，增益权重设为 1.0，使其能动态消费 Cartographer 实时吐出的 `/map` 话题并自主发布 `/cmd_vel`。
+- 使用 `custom_explorer`：基于 Nav2 `NavigateToPose` action 的边界前沿探索，自动订阅 `/map` 检测前沿点并发起导航目标。
 
 **Cartographer 关键参数**：
 ```lua
@@ -154,15 +154,13 @@ POSE_GRAPH.optimization_problem.huber_scale = 1e2
 POSE_GRAPH.optimization_problem.fix_z_in_3d = false
 ```
 
-**explore_lite 关键参数**：
+**custom_explorer 关键参数**：
 ```yaml
-explore_lite:
+custom_explorer:
   ros__parameters:
-    exploration_radius: 3.0
-    min_frontier_size: 10
-    potential_scale: 1e-4
-    gain_scale: 1.0
-    transform_tolerance: 0.1
+    exploration_frequency: 1.0
+    visualize_frontiers: true
+    frontier_queue_size: 10
 ```
 
 ---
@@ -313,7 +311,7 @@ ClearCostmapRecovery (清除局部代价图残影)
 
 ### 🛠️ 步骤 3：自主探索建图与局部子图质量调优 (Unit 3) — 预估 1 天
 
-**操作方法**：一键拉起建图 Launch 链，启动 Cartographer 与 explore_lite。观察小车是否能自主提取未建图区域的边界（Frontier），并自主生成稳定的 `/cmd_vel` 驱动底盘。
+**操作方法**：一键拉起建图 Launch 链，启动 Cartographer 与 custom_explorer。观察小车是否能自主提取未建图区域的边界（Frontier），并自主向 Nav2 发送导航目标。
 
 **验收方案与标准（Gate 3）**：
 
@@ -372,8 +370,9 @@ sudo apt install ros-humble-navigation2 ros-humble-nav2-bringup
 # 机器人定位（EKF）
 sudo apt install ros-humble-robot-localization
 
-# explore_lite（需源码编译）
-git clone https://github.com/hrnr/m-explore.git -b ros2
+# custom_explorer（需源码编译）
+git clone https://github.com/AniArka/Autonomous-Explorer-and-Mapper-ros2-nav2
+
 ```
 
 ---
@@ -384,7 +383,7 @@ git clone https://github.com/hrnr/m-explore.git -b ros2
 |------|-------|---------|------|
 | Unit 1 | adam_assets 包 + get_asset_path() | `ament_index_python` 可检索，无硬编码 | 0.5d |
 | Unit 2 | EKF 里程计底座（local + global） | `odom->base_link` ≥50Hz 无阶跃，降级保护 | 0.5d |
-| Unit 3 | Cartographer 建图 + explore_lite | 100m² 15min 自主探索，子图锋利无重影 | 1d |
+| Unit 3 | Cartographer 建图 + custom_explorer | 100m² 15min 自主探索，子图锋利无重影 | 1d |
 | Unit 4 | archive_map.py 归档脚本 | `.pbstream` 运行时落盘 + 零编译热加载 | 0.5d |
 | Unit 5 | Cartographer 纯定位 | 1s 内一帧重定位，位置误差 ≤3cm，角度 ≤2° | 0.5d |
 | Unit 6 | Nav2 Smac + MPPI + BT 自救 | 50ms 规划，绕障不降速 20%，BT 自救链完整 | 1d |
