@@ -10,13 +10,13 @@
                 <ros>
                     <namespace>/</namespace>
                     <remapping>cmd_vel:=/cmd_vel</remapping>
-                    <remapping>odom:=/odom</remapping>
+                    <remapping>odom:=/wheel_odom</remapping>
                 </ros>
 
                 <update_rate>100</update_rate>
                 <publish_rate>10</publish_rate>
 
-                <odometry_frame>odom</odometry_frame>
+                <odometry_frame>wheel_odom</odometry_frame>
                 <robot_base_frame>base_link</robot_base_frame>
                 <publish_odom>true</publish_odom>
                 <publish_odom_tf>true</publish_odom_tf>
