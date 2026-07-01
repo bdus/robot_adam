@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.8)
+project(adam_assets)
+find_package(ament_cmake REQUIRED)
+install(DIRECTORY share/ DESTINATION share/${PROJECT_NAME})
+ament_package()

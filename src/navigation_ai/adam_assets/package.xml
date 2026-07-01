@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>adam_assets</name>
+  <version>1.0.0</version>
+  <description>Centralized asset repository for Robot Adam navigation stack</description>
+  <maintainer email="adam@example.com">Adam Team</maintainer>
+  <license>MIT</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
