@@ -1,0 +1,219 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+  <world name="test_3d_obstacles">
+    <gravity>0 0 -9.81</gravity>
+    <magnetic_field>0 0 -5e-05</magnetic_field>
+    <atmosphere type="adiabatic"/>
+    <physics type="ode">
+      <real_time_update_rate>1000</real_time_update_rate>
+      <real_time_factor>1</real_time_factor>
+      <ode>
+        <solver>
+          <type>quick</type>
+          <iters>50</iters>
+          <precon>1</precon>
+        </solver>
+        <constraints>
+          <cfm>0.00001</cfm>
+          <erp>0.2</erp>
+          <contact_max_correcting_vel>100</contact_max_correcting_vel>
+          <contact_surface_layer>0.001</contact_surface_layer>
+        </constraints>
+      </ode>
+    </physics>
+    <scene>
+      <ambient>0.4 0.4 0.4 1</ambient>
+      <background>0.7 0.7 0.7 1</background>
+      <shadows>true</shadows>
+    </scene>
+    <light name="sun" type="directional">
+      <cast_shadows>true</cast_shadows>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>0.3 0.2 -1</direction>
+    </light>
+    <include>
+      <uri>model://ground_plane</uri>
+    </include>
+
+    <!-- 外围围墙（10m x 10m 测试区域） -->
+    <model name="wall_north"><static>true</static><pose>0 5.05 0.5 0 0 0</pose>
+      <link name="body"><collision name="col"><geometry><box><size>12 0.1 1</size></box></geometry></collision><visual name="vis"><geometry><box><size>12 0.1 1</size></box></geometry><material><ambient>0.5 0.5 0.5 1</ambient></material></visual></link></model>
+    <model name="wall_south"><static>true</static><pose>0 -5.05 0.5 0 0 0</pose>
+      <link name="body"><collision name="col"><geometry><box><size>12 0.1 1</size></box></geometry></collision><visual name="vis"><geometry><box><size>12 0.1 1</size></box></geometry><material><ambient>0.5 0.5 0.5 1</ambient></material></visual></link></model>
+    <model name="wall_east"><static>true</static><pose>6.05 0 0.5 0 0 1.5707963</pose>
+      <link name="body"><collision name="col"><geometry><box><size>10 0.1 1</size></box></geometry></collision><visual name="vis"><geometry><box><size>10 0.1 1</size></box></geometry><material><ambient>0.5 0.5 0.5 1</ambient></material></visual></link></model>
+    <model name="wall_west"><static>true</static><pose>-6.05 0 0.5 0 0 1.5707963</pose>
+      <link name="body"><collision name="col"><geometry><box><size>10 0.1 1</size></box></geometry></collision><visual name="vis"><geometry><box><size>10 0.1 1</size></box></geometry><material><ambient>0.5 0.5 0.5 1</ambient></material></visual></link></model>
+
+    <!-- 四腿桌子（桌腿直径 ~4cm，桌面高 0.7m） -->
+    <model name="table">
+      <static>true</static>
+      <pose>-2.5 1.5 0.35 0 0 0</pose>
+      <link name="tabletop">
+        <pose>0 0 0.35 0 0 0</pose>
+        <collision name="col">
+          <geometry><box><size>1.2 0.8 0.04</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>1.2 0.8 0.04</size></box></geometry>
+          <material><ambient>0.6 0.4 0.2 1</ambient></material>
+        </visual>
+      </link>
+      <!-- 左前腿 -->
+      <link name="leg1">
+        <pose>-0.55 0.35 0.17 0 0 0</pose>
+        <collision name="col">
+          <geometry><cylinder><radius>0.02</radius><length>0.66</length></cylinder></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><cylinder><radius>0.02</radius><length>0.66</length></cylinder></geometry>
+          <material><ambient>0.4 0.25 0.1 1</ambient></material>
+        </visual>
+      </link>
+      <joint name="leg1_joint" type="fixed">
+        <parent>tabletop</parent><child>leg1</child>
+      </joint>
+      <!-- 右前腿 -->
+      <link name="leg2">
+        <pose>0.55 0.35 0.17 0 0 0</pose>
+        <collision name="col">
+          <geometry><cylinder><radius>0.02</radius><length>0.66</length></cylinder></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><cylinder><radius>0.02</radius><length>0.66</length></cylinder></geometry>
+          <material><ambient>0.4 0.25 0.1 1</ambient></material>
+        </visual>
+      </link>
+      <joint name="leg2_joint" type="fixed">
+        <parent>tabletop</parent><child>leg2</child>
+      </joint>
+      <!-- 左后腿 -->
+      <link name="leg3">
+        <pose>-0.55 -0.35 0.17 0 0 0</pose>
+        <collision name="col">
+          <geometry><cylinder><radius>0.02</radius><length>0.66</length></cylinder></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><cylinder><radius>0.02</radius><length>0.66</length></cylinder></geometry>
+          <material><ambient>0.4 0.25 0.1 1</ambient></material>
+        </visual>
+      </link>
+      <joint name="leg3_joint" type="fixed">
+        <parent>tabletop</parent><child>leg3</child>
+      </joint>
+      <!-- 右后腿 -->
+      <link name="leg4">
+        <pose>0.55 -0.35 0.17 0 0 0</pose>
+        <collision name="col">
+          <geometry><cylinder><radius>0.02</radius><length>0.66</length></cylinder></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><cylinder><radius>0.02</radius><length>0.66</length></cylinder></geometry>
+          <material><ambient>0.4 0.25 0.1 1</ambient></material>
+        </visual>
+      </link>
+      <joint name="leg4_joint" type="fixed">
+        <parent>tabletop</parent><child>leg4</child>
+      </joint>
+    </model>
+
+    <!-- 悬空横板（底盘上方 25cm，完全凌空） -->
+    <model name="suspended_board">
+      <static>true</static>
+      <pose>2.5 0 0.25 0 0 0.3</pose>
+      <link name="board">
+        <collision name="col">
+          <geometry><box><size>2 0.3 0.03</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>2 0.3 0.03</size></box></geometry>
+          <material><ambient>0.9 0.1 0.1 0.8</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 空白长廊（用于 FAST-LIO2 退化测试） -->
+    <model name="corridor_left_wall">
+      <static>true</static>
+      <pose>-8 1.05 0.5 0 0 0</pose>
+      <link name="body">
+        <collision name="col">
+          <geometry><box><size>8 0.1 1</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>8 0.1 1</size></box></geometry>
+          <material><ambient>0.7 0.7 0.7 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+    <model name="corridor_right_wall">
+      <static>true</static>
+      <pose>-8 -1.05 0.5 0 0 0</pose>
+      <link name="body">
+        <collision name="col">
+          <geometry><box><size>8 0.1 1</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>8 0.1 1</size></box></geometry>
+          <material><ambient>0.7 0.7 0.7 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+    <model name="corridor_end">
+      <static>true</static>
+      <pose>-12 0 0.5 0 0 0</pose>
+      <link name="body">
+        <collision name="col">
+          <geometry><box><size>0.1 2 1</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.1 2 1</size></box></geometry>
+          <material><ambient>0.7 0.7 0.7 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 场景装饰物 -->
+    <include>
+      <uri>model://construction_cone</uri>
+      <pose>-1 -1.5 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://jersey_barrier</uri>
+      <pose>4.5 3 0 0 0 1.57</pose>
+    </include>
+
+    <!-- 仿真行人 Actor（按路径循环行走） -->
+    <actor name="pedestrian">
+      <pose>-5 3.5 0 0 0 0</pose>
+      <skin>
+        <filename>file:///usr/share/gz/gazebo-11/media/skins/actor.gltf</filename>
+        <scale>1.0</scale>
+      </skin>
+      <animation name="walk">
+        <filename>file:///usr/share/gz/gazebo-11/media/animation/actor_walk.dae</filename>
+        <scale>1.0</scale>
+        <interpolate_x>true</interpolate_x>
+      </animation>
+      <script>
+        <loop>true</loop>
+        <delay_start>5.0</delay_start>
+        <trajectory id="0" type="walking">
+          <waypoint>
+            <time>0.0</time>
+            <pose>-5 3.5 0 0 0 0</pose>
+          </waypoint>
+          <waypoint>
+            <time>8.0</time>
+            <pose>-5 -3.5 0 0 0 0</pose>
+          </waypoint>
+          <waypoint>
+            <time>16.0</time>
+            <pose>-5 3.5 0 0 0 0</pose>
+          </waypoint>
+        </trajectory>
+      </script>
+    </actor>
+  </world>
+</sdf>
