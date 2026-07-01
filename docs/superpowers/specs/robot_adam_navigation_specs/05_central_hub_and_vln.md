@@ -27,6 +27,8 @@
 
 **功能描述**：基于标准 `rclcpp_lifecycle` 编写核心总控节点。它不参与任何运动学计算，但死死管住底层各路算法（Cartographer、explore_lite、Nav2、FAST-LIO2）的启动与死活，根除因多算法竞态冲突导致的 TF 树穿孔。
 
+> **地图归档统一调度**：`/adam_hub/save_current_map` 是收官阶段的统一地图归档入口。中枢接收到此请求后，dispatch 到当前活跃 SLAM 算法的专属保存接口（Cartographer → `/write_state` `.pbstream`、ORB-SLAM3 → `SaveMap` `.osa`、DROID-SLAM → mesh）。各算法的持久化在 SPEC 02~04 各自独立实现，互不耦合。本单元仅定义调度框架。
+
 **业务状态迁移矩阵规格**：
 
 提供一个标准的控制服务接口 `/adam_hub/switch_mode`（自定义服务类型，含 `target_mode` 字段）：
@@ -57,9 +59,22 @@
 **服务接口**：
 | 接口 | 类型 | 说明 |
 |------|------|------|
-| `/adam_hub/switch_mode` | `std_srvs/srv/SetBool` | `True`=探索建图, `False`=已知图导航 |
+| `/adam_hub/switch_mode` | `adam_hub_controller/srv/SwitchMode` (自定义 `.srv`) | `target_mode`: `MAPPING_EXPLORE(0)` / `KNOWN_MAP_NAV(1)` / `3D_AVOIDANCE(2)` |
 | `/adam_hub/save_current_map` | `std_srvs/srv/Trigger` | 触发地图归档至 `adam_assets` |
 | `/adam_hub/sensor_status` | Topic | 发布各传感器健康度状态 |
+
+**`SwitchMode.srv` 定义**：
+```
+# 模式枚举
+uint8 MAPPING_EXPLORE=0
+uint8 KNOWN_MAP_NAV=1
+uint8 3D_AVOIDANCE=2
+---
+uint8 target_mode
+---
+bool success
+string message
+```
 
 ---
 
@@ -196,7 +211,7 @@ $$P_c = \begin{bmatrix} X_c \\ Y_c \\ Z_c \end{bmatrix} = \begin{bmatrix} (u - c
 
 1. **开放域识别验证**：在 YOLO-World 字典中随意更改文本标签（例如改为 "icebox"），小车摄像头看到冰箱时必须依然能成功框出，提取 2D 像素中心点。
 2. **3D 投影与聚类精度验证**：读取反投影输出的 `/semantic_landmark_pose`。由于车子处于动态行驶中，多帧识别出的物理坐标会受噪点影响轻微抖动。聚类滤波器必须能将其强行归一化为同一个 landmark 物体。
-3. **通关铁律**：打开 `src/3.navigation_ai/adam_assets/share/maps_semantic/bigH_world_topology.json` 文件，里面必须成功序列化写入了 `["refrigerator"]` 的物理位姿。且**反投影结算出的 $[X_w, Y_w]$ 全局绝对坐标，与该冰箱在 Gazebo 仿真世界中的真实物理位姿金标准（Ground Truth）对比，空间绝对误差必须 ≤15 厘米**。
+3. **通关铁律**：打开 `adam_assets/share/maps_semantic/bigH_world_topology.json` 文件，里面必须成功序列化写入了 `["refrigerator"]` 的物理位姿。且**反投影结算出的 $[X_w, Y_w]$ 全局绝对坐标，与该冰箱在 Gazebo 仿真世界中的真实物理位姿金标准（Ground Truth）对比，空间绝对误差必须 ≤15 厘米**。
 
 ---
 
@@ -211,7 +226,7 @@ $$P_c = \begin{bmatrix} X_c \\ Y_c \\ Z_c \end{bmatrix} = \begin{bmatrix} (u - c
 1. **大脑大语言模型推理验证**：本地 Ollama 必须准确在 **1.5 秒内**完成语义泛化和实体消歧，准确识别出"用来放食物保鲜的巨大白盒子"指的是资产库中的 `refrigerator`。
 2. **任务树下发时效验证**：适配器成功读取 JSON 目标坐标并下发给 Nav2 Action，Action 状态瞬间跳变为 `ACTIVE`。
 3. **立体避障与底层稳健筑基验证**：小车平滑启动。在全速驶向冰箱的必经之路上，人工恶意在小车正前方丢下一个**极其复杂的悬空板凳（SPEC 03 筑基）**。Nav2 MPPI 控制器在前向时空推演中敏锐捕捉到 3D 体素代价升高，底盘以极其优美的运动学弧线丝滑绕过板凳（减速不超过 20%）。
-4. **★ 终极通关铁律 ★**：在导航进行到第 5 秒时，人工突然**将整个环境的光照全部关闭、使其陷入漆黑一片的瞬时盲目状态（SPEC 04 筑基）**。全局 EKF 监控节点在 10 毫秒内触发卡方检验拒绝，强行劫持并断开视觉定位流。
+4. **★ 终极通关铁律 ★**：在导航进行到第 5 秒时，调用暗室测试世界（`dark_room_test.world`）的 `/dark_room/toggle_light` 服务，**瞬间关闭全场光照、使其陷入漆黑一片的瞬时盲目状态（SPEC 04 筑基）**。全局 EKF 监控节点在 10 毫秒内触发卡方检验拒绝，强行劫持并断开视觉定位流。
 5. **终极闭环效果**：在全黑暗室中，底座依靠 3D 雷达和常驻轮速卡尔曼滤波器疯狂托底续命，**整车完全没有发生任何由于视觉致盲产生的位置跃迁、剧烈抖动或惊慌急刹。小车保持稳健的运控姿态在黑夜中继续向前滑行，最终四平八稳地滑行至冰箱前方 50 厘米处，优雅刹停，Action 返回成功日志 SUCCESS**。
 
 ---
@@ -228,6 +243,11 @@ ollama pull qwen2.5:7b-instruct
 
 # 或使用 VL 版本
 ollama pull qwen2.5-vl:7b
+
+# 暗室测试世界（Gate 3 依赖）
+# 需在 robot_description 中提供 dark_room_test.world
+# 包含封闭房间 + 可控点光源 + gazebo_ros_light plugin
+# 通过 /dark_room/toggle_light (std_srvs/srv/SetBool) 控制开关灯
 ```
 
 ---
@@ -236,7 +256,7 @@ ollama pull qwen2.5-vl:7b
 
 | 单元 | 产出物 | 通关标准 | 工期 |
 |------|-------|---------|------|
-| Unit 1 | Lifecycle 状态机（adam_hub_controller） | 50 次高频切换零 Ghost 进程，TF 树无穿孔 | 1.5d |
+| Unit 1 | Lifecycle 状态机（adam_hub_controller） | 50 次高频切换零 Ghost 进程，TF 树无穿孔，地图归档统一调度入口 | 1.5d |
 | Unit 2 | YOLO-World + 3D 射线反投影 | 开放域标签零样本检测，3D 坐标 Rviz Marker 正确显示 | 1d |
 | Unit 3 | semantic_map_manager.py + JSON 拓扑字典 | 聚类去噪，反投影误差 ≤15cm，JSON 落盘可检索 | 1d |
 | Unit 4 | Ollama Prompt 适配器 + Nav2 Action 驱动 | 1.5s LLM 推理，悬空板凳绕行，关灯不减速，冰箱前 50cm 刹停 | 1.5d |

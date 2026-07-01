@@ -27,10 +27,12 @@
 
 **功能描述**：编译并封装 ORB-SLAM3。使用双目 + 惯导（Stereo-Inertial）模式。静态词袋文件（`ORBvoc.bin`）必须通过 `adam_assets` 提供的 Python 路由进行动态加载。
 
+> **地图持久化**：ORB-SLAM3 提供自主的 `SaveMap` / `LoadMap` 接口，保存为 `.osa` 格式（含特征点词袋和关键帧图）。本 Unit 仅保证 ORB-SLAM3 能独立保存和加载其地图文件，不与其他 SLAM 耦合。收归统一调度在 SPEC 05 中由 `/adam_hub/save_current_map` 完成。
+
 **数据流接口**：
 
 - **输入**：双目图像话题 `/camera/left/image_raw`、`/camera/right/image_raw`，以及高频物理 IMU `/camera/imu`（≥200Hz）。
-- **输出**：绝对位姿话题 `/orbslam3_pose`（`geometry_msgs/msg/PoseWithCovarianceStamped`）。**其参数 `publish_tf` 强制关闭（设为 false）**。
+- **输出**：绝对位姿话题 `/slam_pose/orbslam3`（`nav_msgs/msg/Odometry`）。**必须强制关闭其 TF 广播选项（参数名视具体 wrapper 实现而定）**，严禁 ORB-SLAM3 直接发布 `odom -> base_link` TF。
 
 **相机标定资产注入**：
 
@@ -64,11 +66,13 @@ LoopClosing.minScore: 0.4
 
 **功能描述**：部署端到端深度学习 SLAM DROID-SLAM。由于该算法基于 PyTorch 且存在高频 CUDA 密集求导，为防止 Python 全局解释器锁（GIL）阻塞 ROS2 核心的回调线程（Callback Queue），**必须设计物理进程隔离与通信外壳**。
 
+> **地图持久化**：DROID-SLAM 的稠密网格和相机位姿以 `.pt` / mesh 文件形式保存和加载，本 Unit 独立处理，不与其他 SLAM 耦合。收归统一调度在 SPEC 05 中由 `/adam_hub/save_current_map` 完成。
+
 **隔离架构设计**：
 
 - **后端进程（Python 独立进程）**：全速运行 DROID-SLAM 神经网络。将接收到的相机图像写入系统**共享内存（Shared Memory / IPC）**。
-- **前端节点（C++ ROS2 Wrapper）**：常驻 ROS2 空间，负责消费相机话题，以零拷贝（Zero-Copy）方式将图像塞入共享内存。同时，从共享内存中读取 Python 后端吐出的最新三维稠密几何网格（Dense Mesh）与相机 Pose。
-- **输出**：发布神经里程计话题 `/droid_slam_odom` 与 3D 稠密网格 `/droid_slam_mesh`。
+- **前端节点（C++ ROS2 Wrapper）**：常驻 ROS2 空间，负责消费相机话题，通过共享内存（Shared Memory / IPC）将图像传递至后端进程。同时，从共享内存中读取 Python 后端吐出的最新三维稠密几何网格（Dense Mesh）与相机 Pose。
+- **输出**：发布神经里程计话题 `/slam_pose/droid_slam` 与 3D 稠密网格 `/droid_slam_mesh`。
 
 **架构拓扑**：
 ```
@@ -84,7 +88,7 @@ LoopClosing.minScore: 0.4
                           │
                     共享内存
                           │
-                  ↓ /droid_slam_odom
+                  ↓ /slam_pose/droid_slam
                   ↓ /droid_slam_mesh
 ```
 
@@ -109,6 +113,37 @@ droid_slam:
 **Level 2 终极多源合流规格**：
 
 - 扩展并升级 `global_ekf_node`。输入源扩展为：`[底层常驻轮速+IMU EKF (Local)]`、`[3D FAST-LIO2 (Lidar)]`、`[ORB-SLAM3 (Vision)]`、`[DROID-SLAM (Neural)]`。
+
+**`ekf_global.yaml` 扩展变更要点（SPEC 03 → SPEC 04）**：
+
+在 SPEC 03 的 `global_ekf_node` 配置基础上，新增 ORB-SLAM3 与 DROID-SLAM 位姿源为 `odom2`、`odom3`：
+
+```yaml
+# ekf_global.yaml 变更（SPEC 04 新增部分）
+ekf_filter_node:
+  ros__parameters:
+    # odom0: /slam_pose/cartographer (SPEC 02)
+    # odom1: /slam_pose/fast_lio     (SPEC 03)
+    odom2: /slam_pose/orbslam3
+    odom2_config: [false, false, false,
+                   true, true, true,
+                   false, false, false,
+                   false, false, true,
+                   false, false, false]
+    odom2_differential: false
+    odom2_queue_size: 10
+
+    odom3: /slam_pose/droid_slam
+    odom3_config: [false, false, false,
+                   true, true, true,
+                   false, false, false,
+                   false, false, true,
+                   false, false, false]
+    odom3_differential: false
+    odom3_queue_size: 10
+```
+
+> **注意**：SPEC 04 完成后，`global_ekf_node` 共融合 4 路绝对位姿观测（odom0~odom3）。各源的权重由 `odom_health_monitor` 按协方差动态调节，异常源权重归零，健康源自动承接。
 - **断流续命硬核逻辑**：Global EKF 建立多通道卡方检验（Chi-Square Test）马氏距离门限过滤器。当视觉源（ORB-SLAM3/DROID-SLAM）由于环境光照突变导致 Tracking Lost 或协方差对角线元素跃迁（>1.0）时，全局 EKF 必须在单帧回调周期内（≤10 毫秒）将该视觉源的观测权重归零（拒绝合流），位置基准完全由常驻的 3D 雷达或底层 Local EKF 承托。
 
 **传感器恢复时的协方差膨胀衰减机制（防重定位瞬间阶跃）**：
@@ -121,7 +156,7 @@ droid_slam:
 - **渐进信任**：在接下来的 N 帧（如 20 帧，约 1 秒 @ 20Hz）内，协方差按指数衰减模型从 0.5 逐步降至正常值 0.01：
   ```
   cov(t) = cov_final + (cov_init - cov_final) * exp(-λ * t)
-  其中 λ = ln(10) / N（10 帧内衰减到 10%）
+  其中 λ = ln(10) / N（N 帧内衰减到 10%，如 20 帧 ≈ 1s @ 20Hz）
   ```
 - **效果**：使恢复后的高精度绝对观测以渐进、丝滑的方式修正进 Global EKF，`map -> odom` 不发生突变，Nav2 `/cmd_vel` 零顿挫。
 
@@ -162,9 +197,9 @@ droid_slam:
 
 **验收方案与白盒标准（Gate 1）**：
 
-1. **回环阶跃验证**：当小车回到起点，ORB-SLAM3 内部触发 DBoW 词袋匹配成功瞬间，在 `/orbslam3_pose` 的累积误差必须发生瞬间阶跃拉平，后端图优化完成误差分摊。
+1. **回环阶跃验证**：当小车回到起点，ORB-SLAM3 内部触发 DBoW 词袋匹配成功瞬间，在 `/slam_pose/orbslam3` 的累积误差必须发生瞬间阶跃拉平，后端图优化完成误差分摊。
 2. **拍照重定位时效**：放开相机遮挡后，算法必须在 **500 毫秒内**基于当前视场特征点与历史关键帧词袋对齐，瞬间重新锁死位姿跟踪（Tracking OK），无位姿发散。
-3. **通关铁律**：整个测试过程中，`/orbslam3_pose` 的发布频率必须稳定在 **≥20Hz**。
+3. **通关铁律**：整个测试过程中，`/slam_pose/orbslam3` 的发布频率必须稳定在 **≥20Hz**。
 
 ---
 
@@ -182,7 +217,7 @@ droid_slam:
 
 ### 🛠️ 步骤 3：极端物理致盲 —— 暗室多源断流续命终极合流测试
 
-**操作方法**：控制小车以 1.0m/s 的高线速度向目标点全速前行。在小车运行到行进路线正中间时，通过仿真器控制环境光照，**在 0.1 秒内将全场环境光照调为 0（即瞬间强行关灯、进入全黑暗室环境）**，致使双目相机画面完全变黑。
+**操作方法**：使用 `robot_description` 包下的暗室测试世界 `dark_room_test.world` 启动仿真。控制小车以 1.0m/s 的高线速度向目标点全速前行。在小车运行到行进路线正中间时，调用暗室世界的 `/dark_room/toggle_light` 服务，**在 0.1 秒内将全场环境光照调为 0（即瞬间强行关灯、进入全黑暗室环境）**，致使双目相机画面完全变黑。
 
 **验收方案与白盒标准（Gate 3）**：
 
@@ -205,6 +240,11 @@ wget https://dl.fbaipublicfiles.com/droid-slam/droid.pth
 
 # 词袋文件（ORB-SLAM3）
 # 需从 ORB-SLAM3 官方仓库下载 ORBvoc.txt / ORBvoc.bin
+
+# 暗室测试世界（SPEC 04/05 Gate 3 依赖）
+# 需在 robot_description 中提供 dark_room_test.world
+# 包含封闭房间 + 可控点光源 + gazebo_ros_light plugin
+# 通过 /dark_room/toggle_light (std_srvs/srv/SetBool) 控制开关灯
 ```
 
 ---

@@ -57,7 +57,7 @@ Robot Adam 系统从顶层到底层严格划分为 5 个纵向功能层与 1 个
 |------|---------|---------|---------|
 | L1 物理层 | `/odom`, `/imu/data`, `/scan`, `/tf_static` | — | Topic |
 | L2 状态估计 | `map->odom->base_link` TF | 融合后的 `odom` | TF + Topic |
-| L3 导航层 | `/cmd_vel` | `/map`, `/goal_reached` | Topic + Action |
+| L3 导航层 | `/cmd_vel` | `/map`, `/goal_reached`, `/slam_pose/*`（各算法位姿观测） | Topic + Action |
 | L4 中枢层 | Lifecycle 状态切换 | 模式状态、传感器健康度 | Service + Topic |
 | L5 语义层 | 目标点 Action 请求 | 任务状态反馈 | Action |
 
@@ -71,16 +71,16 @@ Robot Adam 系统从顶层到底层严格划分为 5 个纵向功能层与 1 个
 robot_adam/
 ├── build_sim.sh                        # 统一仿真一键编译脚本
 └── src/
-    ├── 1.simulation/                   # Level 1: 仿真物理与机器人描述层（常驻底层）
+    ├── simulation/                     # Level 1: 仿真物理与机器人描述层（常驻底层）
     │   └── robot_description/          # 6 种运控变体底盘、Xacro 运动学宏、Gazebo 插件配置
     │
-    ├── 2.localization_mapping/         # Level 2 & Level 3 的传感器状态估计与多源建图流水线
+    ├── localization_mapping/           # Level 2 & Level 3 的传感器状态估计与多源建图流水线
     │   ├── adam_localization/          # [核心] 常驻多源状态估计融合包（实现双层 EKF 里程计底座）
     │   ├── adam_slam/                  # 激光建图与快速重定位算法集成（2D Cartographer / 3D FAST-LIO2）
     │   ├── adam_vision/                # 传统特征点视觉 SLAM 与目标识别（ORB-SLAM3 封装）
     │   └── adam_neural_slam/           # 神经网络与端到端深度学习 SLAM 包（DROID-SLAM 共享内存外壳）
     │
-    └── 3.navigation_ai/               # Level 4 & Level 5 的核心控制、资产管理、时空规划与具身大脑
+    └── navigation_ai/                  # Level 4 & Level 5 的核心控制、资产管理、时空规划与具身大脑
         ├── adam_assets/                # [横向中心] 全局静态地图、相机内参、AI拓扑字典等非结构化资产包
         ├── adam_bringup/               # 顶层单点与集群一键启动配置层（Launch 集合）
         ├── adam_hub_controller/        # 机器人中枢控制器（ROS2 Lifecycle 状态机业务总揽）

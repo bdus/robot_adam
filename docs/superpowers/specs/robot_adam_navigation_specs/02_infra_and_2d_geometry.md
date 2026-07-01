@@ -5,6 +5,7 @@
 > **范围**：`adam_assets` 资产包骨架 + 基础双层 EKF 里程计 + Cartographer 2D 建图/纯定位 + `explore_lite` 自主探索 + Nav2 Smac/MPPI 运控级集成。
 > **关联总设计**：[`docs/spec/01_robot_adam_navigation_architecture.md`](../../../spec/01_robot_adam_navigation_architecture.md) — 本系列宏观架构纲领。
 > **前置依赖**：`SPEC 01`（宏观架构），`robot_description`（Level 1 仿真底盘变体及传感器话题已就绪）。
+> **基准测试变体**：`laser_2wd`。该变体挂载的 2D 激光雷达（`/scan`）和 IMU 已满足 2D 导航栈需求。`mid360_*` 等 3D 雷达变体属于 SPEC 03 范围。
 > **总工期预估**：4 天 | **原子交付单元数**：6
 
 ---
@@ -13,7 +14,7 @@
 
 ### 1.1 本期开发目标
 
-在 Gazebo 仿真环境（或真车常驻物理层）中，彻底跑通"常驻基础里程计 → 自主边界探索建图 → 地图异步归档至静态包 → 二次开机一帧无感全局重定位 → Nav2 路径规划与高频避障运控"的完整 2D 黄金闭环。
+在 Gazebo 仿真环境（或真车常驻物理层）中，彻底跑通"常驻基础里程计 → 自主边界探索建图 → 地图持久化归档 → 二次开机一帧无感全局重定位 → Nav2 路径规划与高频避障运控"的完整 2D 黄金闭环。
 
 ### 1.2 本期严格不包含
 
@@ -22,6 +23,7 @@
 - 3D 固态激光雷达紧耦合（FAST-LIO2）与 Nav2 STVL 时空体素层（SPEC 03）。
 - 传统特征点视觉 VIO（ORB-SLAM3）与神经网络稠密 SLAM（SPEC 04）。
 - 顶层控制中枢 Lifecycle 状态机逻辑管理、大模型具身语义层（SPEC 05）。
+- `ros2_control` 硬件接口层。本阶段使用 Gazebo 原生 `libgazebo_ros_diff_drive.so` 插件驱动底盘并发布原始轮速里程计 `/wheel_odom`。引入 `ros2_control` 属于后续硬件抽象演进，在本阶段无需涉及。
 
 ---
 
@@ -71,8 +73,16 @@ adam_assets/
 
 **数据流拓扑与输入输出**：
 
-- **输入话题**：Level 1 底盘发布的原始编码器里程计 `/odom_raw`（包含 `geometry_msgs/msg/TwistWithCovariance`）与高频物理惯导 `/imu/data`。
+- **输入话题**：Level 1 底盘发布的原始编码器里程计 `/wheel_odom`（`nav_msgs/msg/Odometry`）与高频物理惯导 `/imu/data`。
 - **输出 TF**：启动常驻的 `local_ekf_node`，**唯一广播** `odom -> base_link` 的 TF 树。其 `publish_tf` 强制为 `true`。
+
+**标准 TF 链规格**：
+```
+wheel_odom -> base_link     (diff_drive 插件，publish_odom_tf=true, odometry_frame=wheel_odom)
+odom -> base_link            (local_ekf_node 独占广播，融合后的平滑里程计)
+map -> odom                  (global_ekf_node 独占广播，绝对位姿修正)
+```
+下层的 `wheel_odom -> base_link` 与上层 `odom -> base_link` 互不冲突。`local_ekf_node` 的独占边界在 `odom` 坐标系，不影响 L1 层自身发布的原始轮速 TF。
 
 **白盒边界说明（关键架构约束）**：
 
@@ -83,12 +93,12 @@ adam_assets/
 > 2. **运控断流风险**：SLAM 计算量大，遇到空旷/剧烈晃动时丢帧降频，若 Nav2 MPPI 控制器（50Hz+）直接吃 SLAM 的 TF，会引发急刹失控。
 > 3. **累计漂移不可避免**：单靠 SLAM 的局部里程计盲推，走久必漂，必须靠 Global EKF 定期用绝对位姿修正。
 >
-> **正确分工**：SLAM 算法 = 纯数学解算器，只发 Topic（如 `/cartographer_pose`）；`local_ekf_node` = 独裁广播器，唯一发布 `odom -> base_link` TF。
+> **正确分工**：SLAM 算法 = 纯数学解算器，只发 Topic（如 `/slam_pose/cartographer`）；`local_ekf_node` = 独裁广播器，唯一发布 `odom -> base_link` TF。
 
 **数据分流与降级硬性规格**：
 
 - 启动第二层 `global_ekf_node`，负责广播 `map -> odom` 的 TF。
-- **2D 阶段降级策略**：本期由于没有 3D/视觉的高精位姿源，`global_ekf_node` 接收来自 Unit 5 的 `/cartographer_pose` 话题作为全局观测源。当小车运动平稳时，以 Cartographer 为高权重修正 `map -> odom` 漂移；一旦 Cartographer 报告匹配低置信度（如处于完全无几何特征的空旷地带），`global_ekf_node` 通过其门限过滤器（Mahalanobis Distance）自动降低其权重，完全依靠底层平滑的 `odom -> base_link` 维持小车姿态，绝不断流或阶跃。
+- **2D 阶段降级策略**：本期由于没有 3D/视觉的高精位姿源，`global_ekf_node` 接收来自 Unit 5 的 `/slam_pose/cartographer` 话题作为全局观测源。当小车运动平稳时，以 Cartographer 为高权重修正 `map -> odom` 漂移；一旦 Cartographer 报告匹配低置信度（如处于完全无几何特征的空旷地带），`global_ekf_node` 通过其门限过滤器（Mahalanobis Distance）自动降低其权重，完全依靠底层平滑的 `odom -> base_link` 维持小车姿态，绝不断流或阶跃。
 
 **Slow-Fast 异步双环解耦控制机制（核心架构规范）**：
 
@@ -96,7 +106,7 @@ adam_assets/
 
 1. **Fast 环（Level 2 常驻地基）**：`local_ekf_node` 必须以 **≥50Hz** 的绝对高频，**独占并广播** `odom -> base_link` 的 TF 树。其唯一输入为绝对不断流的硬件底盘轮速计与高频物理 IMU。底盘运控（Nav2 MPPI）永远只依赖此 TF，它绝不受上层算法卡顿的影响。
 
-2. **Slow 环（Level 3 算法层）**：Cartographer、FAST-LIO2、ORB-SLAM3 等算法作为**纯粹的数学解算器**，运行在 10Hz~30Hz 的低频异步线程中。它们必须关闭 `publish_tf` / `provide_odom_frame`，仅以普通 ROS2 Topic 形式异步发布其观测位姿报告（例如 `/cartographer_pose`）。
+2. **Slow 环（Level 3 算法层）**：Cartographer、FAST-LIO2、ORB-SLAM3 等算法作为**纯粹的数学解算器**，运行在 10Hz~30Hz 的低频异步线程中。它们必须关闭 `publish_tf` / `provide_odom_frame`，仅以普通 ROS2 Topic 形式异步发布其观测位姿报告（例如 `/slam_pose/cartographer`）。
 
 3. **异步补丁更新（Global EKF 交汇）**：全系统内，**只有 `global_ekf_node` 有权广播 `map -> odom` TF**。其工作原理：
    - 在收到 Level 3 算法 Topic 更新前，`global_ekf_node` 维持当前 `map -> odom` 矩阵不变。顶层全局位姿 $map \to base\_link = (map \to odom) \times (odom \to base\_link)$ 随 Fast 环高频丝滑变动。
@@ -157,33 +167,35 @@ explore_lite:
 
 ---
 
-### 📦 Unit 4: adam_assets 异步数据流落盘与中转归档机制
+### 📦 Unit 4: Cartographer 地图持久化归档机制
 
-**功能描述**：扫地机自主探图结束后，解决各个 SLAM 节点运行在物理沙盒内、无权限直接改写 `install/share/` 本地代码包的落盘闭环流程。
+**功能描述**：建图结束后，将 Cartographer 内存中的子图状态（`.pbstream`）持久化到磁盘缓存区，供二次开机重定位时加载。
 
-**归档自动化脚本 (`archive_map.py`)**：
+> **设计说明**：本 Unit 仅处理 Cartographer 的 `.pbstream` 归档（Cartographer 独占的序列化格式）。后续每个 SLAM 算法都有自己的持久化机制（ORB-SLAM3 的 `.osa`、DROID-SLAM 的 mesh 等）。各算法在各自 SPEC 中各自处理，互不耦合。SPEC 05 收官时，`/adam_hub/save_current_map` 将作为统一调度入口，dispatch 到各算法。
 
-- 脚本接收落盘 Service 信号 → 动态调用 Cartographer 的标准服务 `/write_state`。
-- 算法先将地图文件（`.pbstream`, `.yaml`, `.pgm`）写出到系统高权限临时区 `/tmp/adam_maps/{timestamp}/`。
-- 脚本利用 OS 级标准库，将文件拷贝搬运至 `~/.ros/adam_assets/maps_2d/` 与 `maps_3d/`（即 `get_asset_path()` 的运行时缓存区）。
-- **不触发任何 `colcon build` 重编译** — 运行时落盘的地图直接由缓存区读取，零编译开销。
-- 若希望将地图固化到源码（例如用于版本管理），提供可选的手动命令：`archive_map.py --commit`，将缓存区文件同步至 `src/3.navigation_ai/adam_assets/share/` 并执行单次 `colcon build --packages-select adam_assets`，该操作仅在关机维护时由人工触发。
+**归档脚本 (`archive_map.py`)**：
+
+- 脚本接收 Service 信号 → 调用 Cartographer 标准服务 `/write_state`。
+- Cartographer 将 `.pbstream` 写出到临时区 `/tmp/adam_maps/{timestamp}/`。
+- 脚本将文件拷贝至 `~/.ros/adam_assets/maps_2d/` 缓存区。
+- **不触发任何 `colcon build` 重编译** — 运行时落盘的地图直接由缓存区读取。
+- 可选手动 `archive_map.py --commit` 将缓存区同步到源码包，仅在关机维护时由人工触发。
 
 **归档流程**：
 ```
 触发 /save_current_map 服务
         │
         ▼
-调用 Cartographer /write_state 服务 → 写入 /tmp/adam_maps/{timestamp}/
+调用 Cartographer /write_state → 写入 /tmp/adam_maps/{timestamp}/xxx.pbstream
         │
         ▼
 脚本拷贝文件至 ~/.ros/adam_assets/maps_2d/（运行时缓存区）
         │
         ▼
-get_asset_path() 下一帧自动命中缓存区，零延迟生效
+get_asset_path('maps_2d', 'xxx.pbstream') 自动命中缓存区
 ```
 
-**通关效果**：运行时地图落盘后，`get_asset_path('maps_2d', 'xxx.pbstream')` 下一帧自动从 `~/.ros/adam_assets/` 返回新路径。系统零编译、零重启即可路由读取新地图，完成非结构化资源闭环。
+**通关效果**：运行时地图落盘后，`get_asset_path('maps_2d', 'xxx.pbstream')` 下一帧自动返回 `~/.ros/adam_assets/` 下新地图路径。系统零编译、零重启即可完成地图持久化闭环。
 
 ---
 
@@ -195,7 +207,7 @@ get_asset_path() 下一帧自动命中缓存区，零延迟生效
 
 - 将 `TRAJECTORY_BUILDER.pure_localization = true` 激活。
 - 将 `POSE_GRAPH.optimize_every_n_nodes = 3`（高频触发全局优化，加速重定位速度）。
-- 节点加载 Unit 4 归档的 `.pbstream` 资产，开机一帧雷达数据打在墙上，瞬间解算并输出高频全局绝对位姿话题 `/cartographer_pose` 喂给 Unit 2 的全局 EKF。
+- 节点加载 Unit 4 归档的 `.pbstream` 资产，开机一帧雷达数据打在墙上，瞬间解算并输出高频全局绝对位姿话题 `/slam_pose/cartographer` 喂给 Unit 2 的全局 EKF。
 
 **关键参数差异（与建图模式对比）**：
 ```lua
@@ -219,7 +231,7 @@ POSE_GRAPH.constraint_builder.global_localization_min_score = 0.4
 **核心配置参数 (`nav2_2d_config.yaml`)**：
 
 - **Planner**：挂载 `nav2_smac_planner/SmacPlanner2D`，针对差速/全向底盘约束，开辟运动学可行路径。
-- **Controller**：挂载 `nav2_mppi_controller/MPPIController`。配置时间前向推演步数 `time_steps = 56`，模型速度扰动采样率 `batch_size = 2000`，确保底盘丝滑加速，动态绕行不突兀减速。
+- **Controller**：挂载 `nav2_mppi_controller/MPPIController`。配置时间前向推演步数 `time_steps = 56`，模型速度扰动采样率 `batch_size = 500`，确保底盘丝滑加速，动态绕行不突兀减速。
 - **自救行为树 (Recovery BT)**：内嵌标准动作序列：`ClearLocalCostmap` → `Spin`（原地旋转重定位） → `Backup`（倒车脱困）。
 
 **Nav2 配置**：
@@ -289,13 +301,13 @@ ClearCostmapRecovery (清除局部代价图残影)
 
 ### 🛠️ 步骤 2：锁死底层常驻里程计 TF 树与降级流控机制 (Unit 2) — 预估 0.5 天
 
-**操作方法**：启动 Gazebo 仿真小车，控制底盘使其在滑腻地面上原地疯狂旋转打滑，或通过仿真器给人为给车身施加剧烈的物理侧向碰撞。监控终端并观测 Rviz 中的 `odom` 坐标系与 TF 树。
+**操作方法**：启动 Gazebo 仿真小车。调用 `/test_tools/set_friction` 将地面摩擦降至 0.01（模拟滑腻冰面）。控制底盘原地疯狂旋转打滑。随后调用 `/test_tools/apply_force "0 80 0 300"` 模拟剧烈的物理侧向碰撞。监控终端并观测 Rviz 中的 `odom` 坐标系与 TF 树。
 
 **验收方案与标准（Gate 2）**：
 
 1. **高频连续性验证**：使用 `ros2 run tf2_ros tf2_monitor odom base_link` 监控。`odom -> base_link` 的 TF 广播频率必须稳定常驻 **≥50Hz**，丢包率 ≤0.1%。
 2. **剧烈运动防跳变验证**：在整个原地打滑和强碰撞过程中，坐标变换曲线必须绝对物理连续。
-3. **通关铁律**：**显式观测 Rviz，整车模型坐标绝不允许发生哪怕 1 厘米或 1 度的瞬间画面跃迁、抖动或断流**。
+3. **通关铁律**：同时启动 `/test_verdict/tf_health`（由 `tf_monitor_node.py` 发布）必须持续输出 `PASS`。如输出 `FAIL`，说明 TF 断流或跳变，系统未达标。
 
 ---
 
@@ -307,7 +319,7 @@ ClearCostmapRecovery (清除局部代价图残影)
 
 1. **自主探图覆盖率验证**：在 100 平方米的复杂多房间仿真地图中，小车必须在 **15 分钟内**自主探索完大面积区域，中途无任何卡死或原地无限转圈现象。
 2. **地图锋利度验证**：观察 Rviz 中逐渐吐出的局部子图（Submaps）。
-3. **通关铁律**：当小车在仿真环境中高速行走、甚至原地快速自旋时，建出来的墙壁和几何线条必须保持锋利（厚度在 1-2 像素以内）。**在没有触发回环检测（Loop Closure）前，由于有融合里程计的精准空域先验，局部子图绝不允许出现可见的重影、线条分叉或墙壁重叠现象**。
+3. **通关铁律**：当小车在仿真环境中高速行走、甚至原地快速自旋时，建出来的墙壁和几何线条必须保持锋利（厚度在 1-2 像素以内）。**在没有触发回环检测（Loop Closure）前，由于有融合里程计的精准空域先验，相邻子图边缘因累积漂移导致的轻微不对齐（错位 <5cm）属于正常现象，但绝不允许出现大尺度重影、线条明显分叉或墙壁严重重叠（错位 ≥10cm）——此类现象说明里程计先验失效，必须排查**。
 
 ---
 
@@ -317,7 +329,7 @@ ClearCostmapRecovery (清除局部代价图残影)
 
 **验收方案与标准（Gate 4）**：
 
-1. **落盘完整性验证**：检查系统的 `/tmp/adam_maps/` 目录，必须包含完好的、带统一时间戳后缀的 `.yaml`（栅格配置文件）、`.pgm`（占用概率图像）和 `.pbstream`（Cartographer 序列化地图状态）三件套。
+1. **落盘完整性验证**：检查 `/tmp/adam_maps/{timestamp}/` 目录，必须包含 Cartographer 序列化地图状态文件 `.pbstream`（带时间戳命名），验证文件大小 >0 且可被 Cartographer 加载。
 2. **缓存区自动同步验证**：静待数秒，检查 `~/.ros/adam_assets/maps_2d/` 下，必须已经静默同步拷入了上述新生成的地图文件。
 3. **通关铁律**：归档完成后，在同一终端（不重启任何节点）执行 `get_asset_path('maps_2d', 'xxx.pbstream')`，**必须立即返回 `~/.ros/adam_assets/maps_2d/` 下的新地图路径**。系统零编译、零重启即可路由读取新地图，无 CPU 飙高风险。
 
@@ -325,7 +337,7 @@ ClearCostmapRecovery (清除局部代价图残影)
 
 ### 🛠️ 步骤 5：劫持机器人验证开机一帧无感全局重定位 (Unit 5) — 预估 0.5 天
 
-**操作方法**：关闭全车所有节点。在 Gazebo 仿真器中，**将小车随机传送到静态地图的任意未知角落**（模拟人类在关机状态下把机器人抱到了别的房间，即经典的机器人"被劫持"场景）。拉起纯定位 Launch 链，加载步骤 4 归档的 `.pbstream` 地图。
+**操作方法**：关闭全车所有节点。在 Gazebo 仿真器中，调用 `/test_tools/teleport` **将小车随机传送到静态地图的任意未知角落**（模拟人类在关机状态下把机器人抱到了别的房间，即经典的机器人"被劫持"场景）。拉起纯定位 Launch 链，加载步骤 4 归档的 `.pbstream` 地图。
 
 **验收方案与标准（Gate 5）**：
 
@@ -337,7 +349,7 @@ ClearCostmapRecovery (清除局部代价图残影)
 
 ### 🛠️ 步骤 6：Nav2 运控高频避障与行为树自救测试 (Unit 6) — 预估 1 天
 
-**操作方法**：拉起配置了 Smac 规划器与 MPPI 控制器的 Nav2 导航全栈。在 Rviz 地图上跨区域下发一个远距离目标点。在小车开始全速前行的路线正前方，通过仿真器**突发性地丢下一块静止的障碍物箱子**。随后，再用一圈箱子将小车的全向去路**彻底堵死**。
+**操作方法**：拉起配置了 Smac 规划器与 MPPI 控制器的 Nav2 导航全栈。在 Rviz 地图上跨区域下发一个远距离目标点。在小车开始全速前行的路线正前方，调用 `/test_tools/spawn_object "spawn box 1.5 0.5 0.0"` **突发性地丢下一块障碍物箱子**。随后，再多次调用 `spawn_object` 将小车的全向去路**彻底堵死**。
 
 **验收方案与标准（Gate 6）**：
 
@@ -373,6 +385,6 @@ git clone https://github.com/hrnr/m-explore.git -b ros2
 | Unit 1 | adam_assets 包 + get_asset_path() | `ament_index_python` 可检索，无硬编码 | 0.5d |
 | Unit 2 | EKF 里程计底座（local + global） | `odom->base_link` ≥50Hz 无阶跃，降级保护 | 0.5d |
 | Unit 3 | Cartographer 建图 + explore_lite | 100m² 15min 自主探索，子图锋利无重影 | 1d |
-| Unit 4 | archive_map.py 归档脚本 | 地图三件套落盘 + 自动 colcon build 刷新 | 0.5d |
+| Unit 4 | archive_map.py 归档脚本 | `.pbstream` 运行时落盘 + 零编译热加载 | 0.5d |
 | Unit 5 | Cartographer 纯定位 | 1s 内一帧重定位，位置误差 ≤3cm，角度 ≤2° | 0.5d |
 | Unit 6 | Nav2 Smac + MPPI + BT 自救 | 50ms 规划，绕障不降速 20%，BT 自救链完整 | 1d |

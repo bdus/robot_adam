@@ -5,6 +5,7 @@
 > **范围**：FAST-LIO2 编译与参数对齐 + Level 2 全局 EKF 退化保护机制 + `pointcloud_to_laserscan` 高度切片（仅用于Global Planner） + Nav2 STVL (时空体素层) 用于Local Costmap 的动态残影消除。
 > **关联总设计**：[`docs/spec/01_robot_adam_navigation_architecture.md`](../../../spec/01_robot_adam_navigation_architecture.md) — 本系列宏观架构纲领。
 > **前置依赖**：`SPEC 01`（宏观架构），`SPEC 02`（2D 激光与常驻 EKF 已通）。Level 1 仿真底盘已挂载固态雷达 Livox Mid360。
+> **基准测试变体**：`mid360_2wd`。该变体挂载了 Livox Mid360 激光雷达和 IMU，满足 3D 空间感知的所有需求。`laser_*` 系列变体不含 3D 雷达，不在本 SPEC 的测试范围内。
 > **总工期预估**：3 天 | **原子交付单元数**：3
 
 ---
@@ -31,14 +32,34 @@
 **数据流拓扑与输入输出**：
 
 - **输入话题**：`/livox/lidar`（定制 `LivoxCustomMsg` 格式或标准点云）与 `/livox/imu`（≥200Hz）。
-- **输出话题**：`/fast_lio_odom`（`nav_msgs/msg/Odometry`）。
+- **输出话题**：`/slam_pose/fast_lio`（`nav_msgs/msg/Odometry`）。
 
 **Level 2 终极 EKF 退化分流硬性规格**：
 
-- `local_ekf_node` 继续常驻融合轮速计与物理 IMU，发布稳定的 `odom -> base_link` TF。**重要**：`odom -> base_link` 是 Level 2 的输出，不是 FAST-LIO2 的输出。FAST-LIO2 在数学上计算了"雷达相对于里程计起点的相对位姿"，但**禁止让它广播 `odom -> base_link` TF**。因为 SLAM 算法计算量大、遇到空旷/剧烈晃动会丢帧降频，若 Nav2 MPPI 直接吃 SLAM 的 TF 会引发急刹失控。正确分工：FAST-LIO2 = 纯 Topic 输出（`/fast_lio_odom`），`local_ekf_node` = 独裁广播器，唯一发布 `odom -> base_link` TF，确保运控 50Hz+ 绝对不断流。
-- `global_ekf_node` 接收 `/fast_lio_odom` 作为绝对位姿观测源，发布 `map -> odom` TF。
+- `local_ekf_node` 继续常驻融合轮速计与物理 IMU，发布稳定的 `odom -> base_link` TF。**重要**：`odom -> base_link` 是 Level 2 的输出，不是 FAST-LIO2 的输出。FAST-LIO2 在数学上计算了"雷达相对于里程计起点的相对位姿"，但**禁止让它广播 `odom -> base_link` TF**。因为 SLAM 算法计算量大、遇到空旷/剧烈晃动会丢帧降频，若 Nav2 MPPI 直接吃 SLAM 的 TF 会引发急刹失控。正确分工：FAST-LIO2 = 纯 Topic 输出（`/slam_pose/fast_lio`），`local_ekf_node` = 独裁广播器，唯一发布 `odom -> base_link` TF，确保运控 50Hz+ 绝对不断流。
+- `global_ekf_node` 接收 `/slam_pose/fast_lio` 作为绝对位姿观测源，发布 `map -> odom` TF。
 
-**降级硬性逻辑**：写一个轻量级监控节点 `odom_health_monitor`。实时订阅 `/fast_lio_odom`，提取其 `pose.covariance` 矩阵对角线元素（特别是 X, Y, Z 轴方差）。当方差均 ≤0.05 时，Global EKF 100% 信任 Fast-LIO2；一旦方差突变（≥0.5 或收到非数 NaN），监控节点通过服务或动态参数降低 Global EKF 中该位姿源的权重，将整车运控降级切换至底层常驻的轮速里程计，防止整车漂移撞墙。
+**`ekf_global.yaml` 扩展变更要点（SPEC 02 → SPEC 03）**：
+
+在 SPEC 02 的 `global_ekf_node` 配置基础上，新增 FAST-LIO2 位姿源为 `odom1`：
+
+```yaml
+# ekf_global.yaml 变更（SPEC 03 新增部分）
+ekf_filter_node:
+  ros__parameters:
+    odom1: /slam_pose/fast_lio
+    odom1_config: [false, false, false,    # x, y, z 位置（绝对观测模式）
+                   true, true, false,      # roll, pitch, yaw
+                   false, false, false,    # vx, vy, vz
+                   false, false, true,     # vroll, vpitch, vyaw
+                   false, false, false]    # ax, ay, az
+    odom1_differential: false              # 绝对观测模式，不做差分
+    odom1_queue_size: 10
+```
+
+> **注意**：SPEC 02 中的 `odom0` 仍对应 `/slam_pose/cartographer`（2D 位姿源）。当 SPEC 03 更新后，`odom0` 与 `odom1` 同时接入，Global EKF 融合两者的绝对位姿观测。`odom_health_monitor` 负责按协方差实时调节各源权重。
+
+**降级硬性逻辑**：写一个轻量级监控节点 `odom_health_monitor`。实时订阅 `/slam_pose/fast_lio`，提取其 `pose.covariance` 矩阵对角线元素（特别是 X, Y, Z 轴方差）。当方差均 ≤0.05 时，Global EKF 100% 信任 Fast-LIO2；一旦方差突变（≥0.5 或收到非数 NaN），监控节点通过服务或动态参数降低 Global EKF 中该位姿源的权重，将整车运控降级切换至底层常驻的轮速里程计，防止整车漂移撞墙。
 
 **关键参数**：
 ```yaml
@@ -160,7 +181,7 @@ local_costmap:
 
 **验收方案与白盒标准（Gate 1）**：
 
-1. **高频验证**：使用 `ros2 topic hz /fast_lio_odom`，其输出频率必须稳定在 **≥100Hz** 且无丢包。
+1. **高频验证**：使用 `ros2 topic hz /slam_pose/fast_lio`，其输出频率必须稳定在 **≥100Hz** 且无丢包。
 2. **剧烈运动验证**：小车在剧烈自旋时，Rviz 中的点云地图绝不允许出现明显的断层或分层（即当前帧点云与历史地图重合度 >95%）。
 3. **退化降级终极测试**：当进入大白墙走廊或点云断流瞬间，观察终端日志，监控节点必须在 **50 毫秒内**识别出协方差发散（方差 >0.5），Global EKF 必须顺利完成降级保护。
 4. **通关铁律**：重定位和 TF 树（`map -> odom`）在此断流期间**绝对不允许发生超过 5 厘米的瞬间阶跃，底盘不闪退，整车靠数轮子格子继续保持平滑前行**。
@@ -187,7 +208,12 @@ local_costmap:
 
 1. **立体防撞验证**：当小车开向上述步骤 2 放置的悬空横板时，Nav2 的本地代价图（Local Costmap）必须立刻被三维体素填充为红色高代价区，Smac 规划器重新寻路绕行，底盘绝不撞击悬空物体。
 2. **动态残影自动消散终极验证**：当行人在小车正前方走过时，3D 体素层会实时在局部代价图上留下行人的移动轨迹。
-3. **通关铁律**：当行人完全离开小车视野的瞬间（以行人的最后一帧点云消失开始计时），代价图上由于行人走过留下的红色高风险"残影体素"，**必须在 1.0 秒内（容差 ±0.1 秒）像烟雾一样完全自动老化消散，代价图恢复纯净的空地状态**。Nav2 MPPI 控制器绝不允许因为历史残影未消散而在空无一人的空地上发生"紧急刹车顿挫"或"原地死锁行为"。
+3. **通关铁律**：当行人完全离开小车视野的瞬间，代价图上由于行人走过留下的红色高风险"残影体素"，**必须在 1.0 秒内（容差 ±0.1 秒）像烟雾一样完全自动老化消散，代价图恢复纯净的空地状态**。Nav2 MPPI 控制器绝不允许因为历史残影未消散而在空无一人的空地上发生"紧急刹车顿挫"或"原地死锁行为"。
+
+   **消散计时量化方法**：
+   - **计时起点**：以 STVL 层最后收到行人点云的传感器时间戳为准（即 observation_sources 的 expected_update_rate 超时时刻），而非人眼主观判断。
+   - **消散完毕判定**：订阅 STVL 发布的体素地图话题，统计行人轨迹对应区域的存活体素计数。当计数归零时即为消散完毕时刻。
+   - **自动化思路**：编写轻量级验收脚本，订阅体素话题记录消散曲线，自动判定是否满足 1.0s±0.1s 约束，避免人眼观察 Rviz 的主观误差。
 
 ---
 
