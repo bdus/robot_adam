@@ -47,8 +47,16 @@
 - `src/localization_mapping/adam_localization/config/ekf_global_2d.yaml`：用于 SPEC 02（保持 `two_d_mode: true`，`odom0: /slam_pose/cartographer`）。
 - `src/localization_mapping/adam_localization/config/ekf_global_3d.yaml`：用于 SPEC 03。设置 `two_d_mode: false`，FAST‑LIO2 作为绝对位姿观测源：
   ```yaml
-  ekf_filter_node:
+  ekf_global_node:
     ros__parameters:
+      publish_tf: true
+      map_frame: map
+      odom_frame: odom
+      base_link_frame: base_link
+      world_frame: map
+
+      two_d_mode: false
+
       odom0: /slam_pose/fast_lio
       odom0_config: [true, true, false,    # x, y, z 位置
                      false, false, true,   # roll, pitch, yaw（仅观测Yaw）
@@ -193,7 +201,12 @@ local_costmap:
 
 ### 📦 Unit 4: Nav2 全栈导航集成与地图持久化归档
 
-**功能描述**：在 SPEC 03 的 mid360_2wd 车型上，集成 Nav2 全栈导航（基于 STVL Local Costmap + pointcloud_to_laserscan Global Costmap）以及建图完成后的地图持久化归档机制。SPEC 03 的 Nav2 使用独立的配置文件 `nav2_stvl_config.yaml`，与 SPEC 02 的 `nav2_2d_config.yaml` 并存互不干扰。
+**功能描述**：在 SPEC 03 的 mid360_2wd 车型上，集成 Nav2 全栈导航（基于 STVL Local Costmap + pointcloud_to_laserscan Global Costmap）以及建图完成后的地图持久化归档机制。SPEC 03 支持映射（Mapping）和定位（Localize）双模式切换，其中映射模式下支持无预置地图的导航（mapless navigation）。SPEC 03 的 Nav2 使用独立的配置文件 `nav2_stvl_config.yaml`，与 SPEC 02 的 `nav2_2d_config.yaml` 并存互不干扰。
+
+**映射与定位模式切换**：
+- **映射模式（默认）**：SLAM 后端（FAST-LIO2）激活，持续构建/更新环境地图。该模式下机器人能够在无预置地图的情况下进行导航，依赖实时 SLAM 进行定位和地图构建。
+- **定位模式**：通过启动参数禁用 SLAM 后端的地图更新功能，加载预存在的地图文件仅用于定位。适用于已有地图且环境静态不变的场景。
+- **模式切换方式**：通过 `spec_03_all.launch.py` 的 launch 参数 `mapping_mode:=true/false` 进行切换，默认值为 `true`（映射模式）。
 
 **数据流拓扑与输入输出**：
 - **输入话题**：`/slam_pose/fast_lio`（3D 里程计→global_ekf_node）、`/scan_3d_projected`（全局规划伪激光）、`/livox/lidar`（STVL 局部避障）、TF `odom→base_link`。
@@ -323,7 +336,30 @@ local_costmap:
    **消散计时量化方法**：
    - **计时起点**：以 STVL 层最后收到行人点云的传感器时间戳为准（即 observation_sources 的 expected_update_rate 超时时刻），而非人眼主观判断。
    - **消散完毕判定**：订阅 STVL 发布的体素地图话题，统计行人轨迹对应区域的存活体素计数。当计数归零时即为消散完毕时刻。
-   - **自动化思路**：编写轻量级验收脚本，订阅体素话题记录消散曲线，自动判定是否满足 1.0s±0.1s 约束，避免人眼观察 Rviz 的主观误差。
+   - **自动化思路**：使用 SPEC 06 中已实现的 `voxel_decay_meter.py`（`adam_test_tools` 包），订阅 STVL 体素地图话题记录消散曲线，自动判定是否满足 1.0s±0.1s 约束。
+
+---
+
+### 🛠️ 步骤 4：Nav2 全栈导航集成验证与地图归档闭环测试
+
+**操作方法**：在 mid360_2wd + SPEC 03 全栈启动后，使用 `ros2 service call /test_tools/spawn_actor` 投放横穿行人，再使用 `ros2 service call /test_tools/spawn_object spawn box X Y Z` 在路径上放置动态障碍物。在 Rviz 中通过 `2D Nav Goal` 工具下发一个导航目标点。待建图完成后调用 `ros2 run adam_slam archive_map.py` 归档地图，验证文件落盘。
+
+**验收方案与白盒标准（Gate 4）**：
+
+1. **3D 导航避障验证**：小车在全局规划路径上遇到仿真行人和动态障碍物时，Nav2 必须实时重新规划路径。底盘绝不撞击任何障碍物（包括悬空横板）。
+2. **STVL 融合导航验证**：局部代价图必须实时呈现行人/障碍物的三维体素标记，残影在 1 秒内消散。全局代价图（基于 `/scan_3d_projected`）保持障碍物信息不被衰减消除。
+3. **地图归档闭环验证**：
+   - `ros2 run adam_slam archive_map.py` 执行后，检查 `~/.ros/adam_assets/maps_2d/` 目录下生成的时间戳文件。
+   - 关闭仿真，重启机器人。
+   - 使用对应的 launch 文件加载地图并验证重定位（TF `map→odom` 稳定，无剧烈跳动）。
+4. **通关铁律**：
+   - 导航全链路（SLAM → EKF → Nav2 → `/cmd_vel`）必须跑通，无 `NaN` 速度指令、无急刹失速。
+   - 归档文件必须在文件系统中可验证存在。
+   - **SPEC 02 兼容性验证**：必须单独启动 SPEC 02 全栈（`laser_2wd`），确认 SPEC 02 的建图、导航、归档功能未受任何影响。两者可切换，不互扰。
+
+**测试工具引用**（源自 SPEC 06 `06_test_infrastructure.md`）：
+- `spawn_actor`、`spawn_object`（场景注入）
+- `voxel_decay_meter`、`odom_health_node`、`pose_jump_detector`（验收判定）
 
 ---
 
@@ -359,4 +395,5 @@ git clone https://github.com/SteveMacenski/spatio_temporal_voxel_layer.git
 |------|-------|---------|------|
 | Unit 1 | FAST-LIO2 里程计 + odom_health_monitor | ≥100Hz，退化协方差 50ms 内识别降级，TF 阶跃 <5cm | 1d |
 | Unit 2 | pointcloud_to_laserscan 切片 | 桌腿离散特征 + 悬空横板连续弧线，地面噪点零容忍 | 0.5d |
-| Unit 3 | STVL 时空避障 | 体素 1.0s ±0.1s 消散，动态行人无残影死锁 | 1.5d |
+| Unit 3 | STVL 时空避障 | 体素 1.0s ±0.1s 消散，动态行人无残影死锁 | 1d |
+| Unit 4 | Nav2 全栈导航 + 地图归档 | mapping 无地图导航 + localize 模式重定位，归档文件可验证 | 1.5d |
