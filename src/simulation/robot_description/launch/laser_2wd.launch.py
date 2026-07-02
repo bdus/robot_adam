@@ -11,7 +11,7 @@ def generate_launch_description():
     robot_name = "laser_2wd"
     urdf_path = get_package_share_directory('robot_description')
     default_model_path = urdf_path + '/urdf/robots/laser_2wd.urdf.xacro'
-    default_world_path = urdf_path + '/worlds/empty.world'
+    default_world_path = urdf_path + '/worlds/bigH.world'
     use_sim_time = launch.substitutions.LaunchConfiguration('use_sim_time', default='true')
 
     action_declare_arg_model = launch.actions.DeclareLaunchArgument(

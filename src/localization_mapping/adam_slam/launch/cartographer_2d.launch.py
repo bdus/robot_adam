@@ -14,6 +14,9 @@ def generate_launch_description():
             '-configuration_directory', config_dir + '/config',
             '-configuration_basename', 'cartographer_2d.lua',
         ],
+        remappings=[
+            ('odom', '/odometry/filtered'),
+        ],
         output='screen',
     )
 

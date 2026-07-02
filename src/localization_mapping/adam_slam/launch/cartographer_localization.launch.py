@@ -1,7 +1,7 @@
-import os
 from launch import LaunchDescription
-from launch_ros.actions import Node
 from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
@@ -18,6 +18,9 @@ def generate_launch_description():
                 '-configuration_directory', config_dir + '/config',
                 '-configuration_basename', 'cartographer_localization.lua',
                 '-load_state_filename', LaunchConfiguration('load_state_filename'),
+            ],
+            remappings=[
+                ('odom', '/odometry/filtered'),
             ],
             output='screen',
         ),

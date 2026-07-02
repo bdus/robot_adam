@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>custom_explorer</name>
+  <version>0.1.0</version>
+  <description>Placeholder custom explorer node for SPEC 02</description>
+  <maintainer email="adam@example.com">Adam Team</maintainer>
+  <license>MIT</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <build_depend>rclcpp</build_depend>
+  <exec_depend>rclcpp</exec_depend>
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

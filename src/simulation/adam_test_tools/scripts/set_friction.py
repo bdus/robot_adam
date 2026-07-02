@@ -16,8 +16,7 @@ Note: Gazebo Classic 11 supports friction modification via
 
 import rclpy
 from rclpy.node import Node
-from std_srvs.srv import SetFloat
-from gazebo_msgs.srv import SetLinkProperties
+from std_srvs.srv import Trigger
 from builtin_interfaces.msg import Duration
 
 
@@ -25,46 +24,22 @@ class SetFrictionNode(Node):
 
     def __init__(self):
         super().__init__("test_set_friction")
-        self._ground_link = "ground_plane::link"
         self._default_mu = 0.5
+        self.declare_parameter("friction", self._default_mu)
 
-        self._client = self.create_client(SetLinkProperties, "/gazebo/set_link_properties")
-        while not self._client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info("Waiting for /gazebo/set_link_properties...")
-
-        self.srv = self.create_service(SetFloat, "/test_tools/set_friction", self._callback)
+        self.srv = self.create_service(Trigger, "/test_tools/set_friction", self._callback)
         self.get_logger().info("SetFrictionNode ready on /test_tools/set_friction")
 
-    def _set_mu(self, mu: float) -> bool:
-        req = SetLinkProperties.Request()
-        req.link_name = self._ground_link
-        req.gravity_mode = True
-        req.mass = -1.0  # keep existing
-        req.ixx = -1.0
-        req.iyy = -1.0
-        req.izz = -1.0
-        # mu is not directly settable via SetLinkProperties in Gazebo Classic
-        # We log the request and print guidance
-        self.get_logger().info(
-            f"NOTE: Gazebo Classic 11 does not support runtime mu via SetLinkProperties.\n"
-            f"To actually change friction, edit the world's ground_plane <surface><friction><ode><mu> "
-            f"or use <plugin name='libgazebo_ros_wheel_slip.so'> on wheel links.\n"
-            f"Requested mu={mu} logged for awareness."
-        )
-        return True
-
     def _callback(self, request, response):
-        mu = request.data
-        if mu < 0.0:
-            response.success = False
-            response.message = "Friction coefficient must be >= 0"
-            return response
-
-        ok = self._set_mu(mu)
-        response.success = ok
-        response.message = f"Friction mu={mu:.2f}"
-        if ok:
-            self.get_logger().info(f"Friction set to {mu:.2f}")
+        mu = self.get_parameter("friction").value
+        self.get_logger().info(
+            f"Friction mu={mu:.2f} (set via friction parameter). "
+            f"NOTE: Gazebo Classic 11 does not support runtime mu changes. "
+            f"To change friction, edit world's ground_plane <surface><friction><ode><mu> "
+            f"or use libgazebo_ros_wheel_slip.so on wheel links."
+        )
+        response.success = True
+        response.message = f"Friction mu={mu:.2f} (informational)"
         return response
 
 
