@@ -794,7 +794,7 @@ src/
   bt_navigator:
     ros__parameters:
       use_sim_time: true
-      default_nav_to_pose_bt_xml: "navigate_to_pose_w_recovery_and_remapping.xml"
+      default_nav_to_pose_bt_xml: "navigate_to_pose_w_replanning_and_recovery.xml"
 
   amcl:
     ros__parameters:
@@ -970,6 +970,26 @@ src/
 
   Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
   ```
+
+---
+
+## 调试总结 (2026-07-03)
+
+在今日的调试会话中，解决了以下关键问题：
+
+1. **MPPI Controller Critic 命名问题**：
+   - 症状：`Failed to create controller. Exception: class mppi::critics::constraint_critic with base class type mppi::critics::CriticFunction does not exist`
+   - 原因：ROS2 Humble 中 MPPI 要求 critic 名称使用 PascalCase（如 `ConstraintCritic`），不能用 snake_case
+   - 修复：所有 critic 名称改为 PascalCase：`ConstraintCritic`, `GoalCritic`, `GoalAngleCritic`, `ObstaclesCritic`, `PathAlignCritic`, `PathFollowCritic`, `PreferForwardCritic`
+
+2. **BT XML 文件名错误**：
+   - 症状：`Couldn't open input XML file: navigate_to_pose_w_recovery_and_remapping.xml`
+   - 原因：`nav2_bt_navigator/share/behavior_trees/` 中的实际文件名是 `navigate_to_pose_w_replanning_and_recovery.xml`
+   - 修复：`nav2_2d_config.yaml` 中 `default_nav_to_pose_bt_xml` 改为正确文件名
+
+3. **TF 链正常**：`map → odom → base_link → wheel links` 全链路已打通，初始时序警告属正常现象
+
+4. **待解决**：bt_navigator 仍无法加载 BT XML（相对路径解析失败），需进一步调试路径解析
 
 ---
 

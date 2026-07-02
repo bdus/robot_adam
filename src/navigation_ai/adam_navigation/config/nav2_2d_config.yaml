@@ -27,27 +27,27 @@ controller_server:
       vy_max: 0.0
       wz_max: 0.8
       enable_obstacle_collision_check: true
-      critics: ["constraint_critic", "goal_critic", "goal_angle_critic",
-                 "obstacle_critic", "path_align_critic", "path_follow_critic",
-                 "prefer_forward_critic"]
-      constraint_critic:
+      critics: ["ConstraintCritic", "GoalCritic", "GoalAngleCritic",
+                 "ObstaclesCritic", "PathAlignCritic", "PathFollowCritic",
+                 "PreferForwardCritic"]
+      ConstraintCritic:
         enabled: true
-      goal_critic:
+      GoalCritic:
         enabled: true
         weight: 3.0
-      goal_angle_critic:
+      GoalAngleCritic:
         enabled: true
         weight: 2.0
-      obstacle_critic:
+      ObstaclesCritic:
         enabled: true
         weight: 5.0
-      path_align_critic:
+      PathAlignCritic:
         enabled: true
         weight: 2.0
-      path_follow_critic:
+      PathFollowCritic:
         enabled: true
         weight: 2.0
-      prefer_forward_critic:
+      PreferForwardCritic:
         enabled: true
         weight: 1.0
 
@@ -104,7 +104,7 @@ global_costmap:
 bt_navigator:
   ros__parameters:
     use_sim_time: true
-    default_nav_to_pose_bt_xml: "navigate_to_pose_w_recovery_and_remapping.xml"
+    default_nav_to_pose_bt_xml: "navigate_to_pose_w_replanning_and_recovery.xml"
 
 amcl:
   ros__parameters:

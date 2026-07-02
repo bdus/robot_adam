@@ -261,7 +261,7 @@ controller_server:
 
 bt_navigator:
   ros__parameters:
-    default_nav_to_pose_bt_xml: "navigate_to_pose_w_recovery_and_remapping.xml"
+    default_nav_to_pose_bt_xml: "navigate_to_pose_w_replanning_and_recovery.xml"
 ```
 
 **行为树恢复链**：
