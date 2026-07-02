@@ -1,3 +1,12 @@
 [submodule "3rd_packages/livox_ros_driver2"]
 	path = 3rd_packages/livox_ros_driver2
 	url = git@github.com:Livox-SDK/livox_ros_driver2.git
+[submodule "3rd_packages/FASTLIO2_ROS2"]
+	path = 3rd_packages/FASTLIO2_ROS2
+	url = git@github.com:bdus/FASTLIO2_ROS2.git
+[submodule "3rd_packages/sophus"]
+	path = 3rd_packages/sophus
+	url = https://github.com/strasdat/Sophus.git
+[submodule "3rd_packages/spatio_temporal_voxel_layer"]
+	path = 3rd_packages/spatio_temporal_voxel_layer
+	url = https://github.com/SteveMacenski/spatio_temporal_voxel_layer.git

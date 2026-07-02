@@ -27,7 +27,7 @@
 
 ### 📦 Unit 1: FAST-LIO2 紧耦合状态估计调优与 Odom 退化保护
 
-**功能描述**：源码编译社区 ROS2 Humble 移植版 FAST-LIO2。消费 Mid360 的点云与内置高频 IMU，输出高频 3D 里程计。在 Level 2 的全局 EKF 中建立基于协方差的退化保护。
+**功能描述**：源码编译 FAST-LIO2（bdus/FASTLIO2_ROS2 fork），消费 Mid360 的点云（CustomMsg 格式）与内置高频 IMU，输出高频 3D 里程计（含 IESKF 协方差矩阵）。在 Level 2 的全局 EKF 中建立基于协方差的退化保护。**FAST-LIO2 仅输出纯 Topic（`/slam_pose/fast_lio`），不广播任何 TF**，由 Level 2 `local_ekf_node` 独裁维护 `odom -> base_link` TF。
 
 **数据流拓扑与输入输出**：
 
@@ -48,11 +48,10 @@
 ekf_filter_node:
   ros__parameters:
     odom1: /slam_pose/fast_lio
-    odom1_config: [false, false, false,    # x, y, z 位置（绝对观测模式）
-                   true, true, false,      # roll, pitch, yaw
-                   false, false, false,    # vx, vy, vz
-                   false, false, true,     # vroll, vpitch, vyaw
-                   false, false, false]    # ax, ay, az
+    odom1_config: [true, true, false,    # x, y, z 位置（观测X和Y，不观测Z）
+                   false, false, true,   # roll, pitch, yaw（仅观测Yaw）
+                   false, false, false,  # vx, vy, vz
+                   false, false, false]  # vroll, vpitch, vyaw
     odom1_differential: false              # 绝对观测模式，不做差分
     odom1_queue_size: 10
 ```
@@ -61,25 +60,54 @@ ekf_filter_node:
 
 **降级硬性逻辑**：写一个轻量级监控节点 `odom_health_monitor`。实时订阅 `/slam_pose/fast_lio`，提取其 `pose.covariance` 矩阵对角线元素（特别是 X, Y, Z 轴方差）。当方差均 ≤0.05 时，Global EKF 100% 信任 Fast-LIO2；一旦方差突变（≥0.5 或收到非数 NaN），监控节点通过服务或动态参数降低 Global EKF 中该位姿源的权重，将整车运控降级切换至底层常驻的轮速里程计，防止整车漂移撞墙。
 
-**关键参数**：
+**关键参数（对应 `fastlio2/config/lio.yaml`）**：
+
 ```yaml
-# FAST-LIO2 参数
-lio:
-  ros__parameters:
-    # 点云预处理
-    point_filter_num: 4               # 降采样步长
-    filter_size_surf: 0.5             # 面特征体素滤波尺寸
-    filter_size_map: 0.5              # 地图体素滤波尺寸
+# FAST-LIO2 参数 — 与 FASTLIO2_ROS2 (fork: bdus/FASTLIO2_ROS2) 的 lio.yaml 格式对齐
+# 注意：FAST-LIO2 使用独立 YAML 文件通过 config_path 参数传入，非 ROS2 parameter 风格
 
-    # 传感器外参
-    extrinsic_est_en: false           # 是否在线估计外参（false=使用给定值）
-    lidar_to_imu_init: [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+# 话题绑定（与 Livox driver multi_topic=0 模式对齐）
+imu_topic: /livox/imu
+lidar_topic: /livox/lidar
+body_frame: body
+world_frame: lidar
 
-    # 噪声协方差（IKFoM 初始值）
-    imu_gyro_cov: 0.001
-    imu_acc_cov: 0.01
-    lidar_point_cov: 0.001
+# 点云预处理
+lidar_filter_num: 6                   # 降采样步长（每隔 N 点取 1）
+lidar_min_range: 0.5                  # 最小有效距离（米）
+lidar_max_range: 30.0                 # 最大有效距离（米）
+scan_resolution: 0.15                 # 扫描体素滤波分辨率
+map_resolution: 0.3                   # 地图 IKDTree 体素分辨率
+
+# 空间管理
+cube_len: 300                         # 局部地图立方体边长（米）
+det_range: 60                         # 探测范围（米）
+move_thresh: 1.5                      # 地图移动阈值
+
+# IMU 噪声协方差（IKFoM 初始值，越大概率越信任）
+na: 0.01                              # 加速度随机游走
+ng: 0.01                              # 陀螺仪随机游走
+nba: 0.0001                           # 加速度偏置随机游走
+nbg: 0.0001                           # 陀螺仪偏置随机游走
+
+# 初始化
+imu_init_num: 20                      # IMU 初始化用帧数
+near_search_num: 5                    # 最近邻搜索数
+ieskf_max_iter: 5                     # IESKF 最大迭代次数
+gravity_align: true                   # 是否利用重力方向对齐初始姿态
+
+# 外参（LiDAR → IMU）
+esti_il: false                        # 是否在线估计外参（false=使用给定值）
+r_il: [1.0, 0.0, 0.0,                # 旋转矩阵（3x3）
+       0.0, 1.0, 0.0,
+       0.0, 0.0, 1.0]
+t_il: [-0.011, -0.02329, 0.04412]    # 平移向量（米）
+
+# 观测
+lidar_cov_inv: 1000.0                 # 激光点观测信息矩阵（协方差逆）
 ```
+
+> **注意**：IMU 加速度在 `lio_node.cpp:125` 被乘以 10.0 因子（适配 Livox IMU 输出单位），`lio_node.cpp:67` 的 timer 周期为 10ms（目标 ≥100Hz 输出）。
 
 ---
 
@@ -102,7 +130,7 @@ lio:
 **切片硬性规格**：
 **重要说明**：高度切片范围 (min_height=0.10m, max_height=0.40m) 仅用于 **全局规划器（Global Planner）**。在局部代价图（Local Costmap）中，必须保留全量或更大范围的 3D STVL 体素网格输入，依靠 MPPI 控制器在前向 56 步的时空推演中实施强行刹车或绕行。
 
-- **输入**：`/livox/lidar_pc2`（标准 `sensor_msgs/msg/PointCloud2`）。
+- **输入**：`/livox/lidar`（`sensor_msgs/msg/PointCloud2`，需 `xfer_format = kPointCloud2Msg`）。
 - **输出**：`/scan_3d_projected`（`sensor_msgs/msg/LaserScan`）。
 - **参数对齐**：
   - `min_height = 0.10`（底盘上方 10cm，避开地面噪声）
@@ -223,9 +251,19 @@ local_costmap:
 # pointcloud_to_laserscan（apt 可用）
 sudo apt install ros-humble-pointcloud-to-laserscan
 
-# FAST-LIO2（需源码编译 ROS2 Humble 社区分支）
-git clone https://github.com/EmarUn/fast_lio_rviz  # 或等效稳定 ROS2 移植
-# 或 git clone https://github.com/lifegpc/FAST_LIO -b ros2
+# FAST-LIO2（使用 bdus/FASTLIO2_ROS2 fork，含回环、重定位、一致性优化）
+git clone https://github.com/bdus/FASTLIO2_ROS2.git
+cd FASTLIO2_ROS2
+# 初始化子模组（含 Sophus 1.22.10）
+git submodule update --init --recursive
+colcon build --packages-select fastlio2 hba localizer pgo interface
+
+# Sophus（若未通过子模组获取，可自行编译）
+# 参考：git clone https://github.com/strasdat/Sophus.git && cd Sophus && git checkout 1.22.10 && mkdir build && cd build && cmake .. -DSOPHUS_USE_BASIC_LOGGING=ON && make && sudo make install
+
+# 其他编译依赖（需自行满足）：
+#   PCL >= 1.8, Eigen >= 3.3.4, yaml-cpp, GTSAM（via apt or source）
+#   livox_ros_driver2（请参考其官方仓库完成 SDK 与 ROS2 包编译）
 
 # STVL（需源码编译）
 git clone https://github.com/SteveMacenski/spatio_temporal_voxel_layer.git
