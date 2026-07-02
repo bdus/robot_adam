@@ -6,6 +6,16 @@
 - **Logic**: Pure Bash control loop with max 5 retries, kills gzserver/gzclient/ruby/*ign/*gz/robot_state_publisher (sim-related)/ros2_control_node/component_container/ros2 launch processes, verifies with ros2 node list and port 11345 check
 - **Usage**: Invoked via Skill tool, spawns background Bash sub-agent to execute clean.sh directly
 - **Tested**: Script executes successfully and reports PASS when no simulation nodes remain
+## Key Learnings
+- Cartographer in ROS2 Humble uses `map_builder.lua` + `trajectory_builder.lua`, NOT `cartographer_ros.lua` (ROS1-only)
+- Cartographer requires IMU frame colocated with tracking_frame — if IMU has frame_id `base_footprint`, set `tracking_frame = "base_footprint"` or disable IMU with `use_imu_data = false`
+- EKF from robot_localization needs `two_d_mode: true` for flat 2D robots, otherwise it may not publish TF
+- Fast-DDS SHM transport (`RMW_FASTRTPS_USE_SHM`) can cause message loss on `/tf` — disable with `SetEnvironmentVariable('RMW_FASTRTPS_USE_SHM', '0')` in launch files
+- Cartographer should consume EKF-filtered odometry (`/odometry/filtered`, frame `odom`) rather than raw `/wheel_odom` (frame `wheel_odom`)
+- Diff_drive `publish_odom_tf: true` 会发布 `wheel_odom→base_link` TF，与 EKF 的 `odom→base_link` 冲突导致 `base_link` 双父帧，TF 树分裂。EKF 模式下必须设为 `publish_odom_tf: false`
+- EKF `odom0_differential: true` 让里程计数据作为增量而非绝对位姿融合，避免帧不匹配导致的滤波器发散
+- EKF `odom0_config` 中索引 5（位姿 yaw）和索引 11（角速度 yaw）都提供朝向信息，转弯时轮式里程计 yaw 有噪声，与 IMU 冲突导致定位晃动。建图模式下只保留索引 11，去掉索引 5
+
 ## Do-Not-Repeat
 
 <!-- Mistakes made and corrected. Each entry prevents the same mistake recurring. -->

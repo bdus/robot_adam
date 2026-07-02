@@ -51,13 +51,18 @@ def generate_launch_description():
             ),
         ),
 
-        # L3: Cartographer (建图模式)
+        # L3: Cartographer (建图模式) + Nav2
         GroupAction(
             condition=IfCondition(PythonExpression(['"', LaunchConfiguration('mode'), '" == "mapping"'])),
             actions=[
                 IncludeLaunchDescription(
                     PythonLaunchDescriptionSource(
                         slam_dir + '/launch/cartographer_2d.launch.py'
+                    ),
+                ),
+                IncludeLaunchDescription(
+                    PythonLaunchDescriptionSource(
+                        nav_dir + '/launch/nav2_bringup.launch.py'
                     ),
                 ),
             ],

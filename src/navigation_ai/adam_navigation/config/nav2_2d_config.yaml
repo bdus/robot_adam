@@ -1,19 +1,22 @@
 planner_server:
   ros__parameters:
     use_sim_time: true
-    planner_plugin_types: ["nav2_smac_planner/SmacPlanner2D"]
-    SmacPlanner2D:
+    planner_plugins: ["GridBased"]
+    GridBased:
+      plugin: "nav2_smac_planner/SmacPlanner2D"
       downsample_costmap: false
       tolerance: 0.25
-      allow_unknown: false
+      allow_unknown: true
       max_iterations: 1000000
       smooth_path: true
+      cache_expensive: false
 
 controller_server:
   ros__parameters:
     use_sim_time: true
-    controller_plugin_types: ["nav2_mppi_controller/MppIController"]
-    MppIController:
+    controller_plugins: ["FollowPath"]
+    FollowPath:
+      plugin: "nav2_mppi_controller::MPPIController"
       motion_model: "DiffDrive"
       time_steps: 56
       model_dt: 0.1
@@ -24,6 +27,29 @@ controller_server:
       vy_max: 0.0
       wz_max: 0.8
       enable_obstacle_collision_check: true
+      critics: ["constraint_critic", "goal_critic", "goal_angle_critic",
+                 "obstacle_critic", "path_align_critic", "path_follow_critic",
+                 "prefer_forward_critic"]
+      constraint_critic:
+        enabled: true
+      goal_critic:
+        enabled: true
+        weight: 3.0
+      goal_angle_critic:
+        enabled: true
+        weight: 2.0
+      obstacle_critic:
+        enabled: true
+        weight: 5.0
+      path_align_critic:
+        enabled: true
+        weight: 2.0
+      path_follow_critic:
+        enabled: true
+        weight: 2.0
+      prefer_forward_critic:
+        enabled: true
+        weight: 1.0
 
 local_costmap:
   local_costmap:

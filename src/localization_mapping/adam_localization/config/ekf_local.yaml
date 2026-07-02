@@ -1,5 +1,6 @@
 ekf_local_node:
   ros__parameters:
+    frequency: 10.0
     publish_tf: true
     map_frame: map
     odom_frame: odom
@@ -12,7 +13,7 @@ ekf_local_node:
                    false, false, false,
                    false, false, true,
                    false, false, false]
-    odom0_differential: false
+    odom0_differential: true
     odom0_queue_size: 10
 
     two_d_mode: true
@@ -22,8 +23,7 @@ ekf_local_node:
                   false, false, false,
                   false, false, false,
                   false, false, true,
-                  true, true, false,
-                  false]
+                  true, true, false]
     imu0_differential: false
     imu0_queue_size: 10
     imu0_remove_gravitational_acceleration: true
