@@ -48,6 +48,12 @@ def generate_launch_description():
         # Verification nodes
         Node(
             package='adam_test_tools',
+            executable='nav2_lifecycle_check.py',
+            name='test_nav2_lifecycle_check',
+            output='screen',
+        ),
+        Node(
+            package='adam_test_tools',
             executable='tf_monitor_node.py',
             name='test_tf_monitor',
             output='screen',

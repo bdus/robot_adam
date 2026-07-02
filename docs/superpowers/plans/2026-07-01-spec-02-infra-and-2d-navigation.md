@@ -973,6 +973,43 @@ src/
 
 ---
 
+## 仿真导航测试结果 (2026-07-03)
+
+### 测试环境
+
+- 启动: `ros2 launch adam_navigation spec_02_all.launch.py mode:=mapping`
+- 世界: bigH.world
+- 变体: laser_2wd (diff_drive)
+
+### 测试结果
+
+- **[通过] 全栈启动**: 6 包 colcon build 成功，Gazebo + EKF + Cartographer + Nav2 + test_tools 全部正常启动
+- **[通过] TF 链**: map → odom → base_link → wheel links 完整
+- **[通过] 话题通道**: /scan, /imu/data, /wheel_odom, /odometry/filtered, /map, /slam_pose/cartographer 均有数据
+- **[通过] BT XML 修复**: bt_navigator 成功加载 XML (`/opt/ros/humble/share/nav2_bt_navigator/behavior_trees/navigate_to_pose_w_replanning_and_recovery.xml`)
+- **[通过] publish_goal.py**: 单目标导航成功 — `ros2 run adam_test_tools publish_goal 2.0 0.0` 返回 SUCCEEDED
+- **[通过] 多目标导航**: 序列 goals 中首个目标到达成功 (1.0, 1.0, 1.57 rad)
+- **[部分通过] 远距转向**: 第二个目标 (1.0, -1.0, -1.57 rad) ABORTED — 可能因路径规划超时或cosmap不覆盖
+
+### 新增文件
+
+- `src/simulation/adam_test_tools/verification/nav2_lifecycle_check.py` — Nav2 生命周期检查节点
+- 更新 `src/simulation/adam_test_tools/CMakeLists.txt` — 安装 publish_goal.py 和 nav2_lifecycle_check.py
+- 更新 `src/simulation/adam_test_tools/launch/test_tools.launch.py` — 添加 lifecycle check 节点
+- 更新 `docs/superpowers/specs/robot_adam_navigation_specs/06_test_infrastructure.md` — 添加 nav2_lifecycle_check 说明
+
+#### 待调试项 (下一步)
+
+4. **mapping 模式无地图导航**: 建图模式下 costmap 需要 `static_map: true`（当前配置），但建图阶段地图动态变化需验证无地图导航模式是否正常工作。可能需调整 global_costmap 的 `static_map: false` 或 Nav2 配置仅依赖 local_costmap 避障。
+5. **localize 模式**: 纯定位模式使用 `cartographer_localization.lua` + 加载 pbstream，当前尚未测试。需验证 load_state_filename 参数传入、Cartographer 重定位成功、Nav2 导航正常。
+6. **现存已知**: 参考下方“已知问题”。
+
+## 已知问题
+
+1. **odom 转向漂移**: 转弯时 EKF 定位晃动，静止后恢复 (bug-091)。根因: 轮式里程计差速 yaw 估计有噪声，# odom0_config 已去掉索引5只保留索引11，仍需调优 EKF 协方差权重。
+2. **远距离路径规划**: 第二个 goal (1.0, -1.0) ABORTED，需检查 costmap 边界和 planner_server 超时配置。
+3. **publish_goal.py ros2 run 报 "No executable found"**: 需 `python3` 直接调用或检查 `ros2 run` 路径解析问题。
+
 ## 调试总结 (2026-07-03)
 
 在今日的调试会话中，解决了以下关键问题：

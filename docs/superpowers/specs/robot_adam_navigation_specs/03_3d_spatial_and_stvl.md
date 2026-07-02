@@ -1,12 +1,12 @@
 # 3D 空间几何与时空立体避障详细规格说明书 (SPEC 03_3D_Spatial)
 
-> **版本**: v1.1 | **日期**: 2026-06-28 | **状态**: Working
+> **版本**: v1.2 | **日期**: 2026-07-03 | **状态**: Working
 > **存放目录**: `docs/superpowers/specs/robot_adam_navigation_specs/03_3d_spatial_and_stvl.md`
-> **范围**：FAST-LIO2 编译与参数对齐 + Level 2 全局 EKF 退化保护机制 + `pointcloud_to_laserscan` 高度切片（仅用于Global Planner） + Nav2 STVL (时空体素层) 用于Local Costmap 的动态残影消除。
+> **范围**：FAST-LIO2 编译与参数对齐 + Level 2 全局 EKF 退化保护机制 + `pointcloud_to_laserscan` 高度切片（仅用于Global Planner） + Nav2 STVL (时空体素层) 用于Local Costmap 的动态残影消除 + 地图持久化归档。
 > **关联总设计**：[`docs/spec/01_robot_adam_navigation_architecture.md`](../../../spec/01_robot_adam_navigation_architecture.md) — 本系列宏观架构纲领。
 > **前置依赖**：`SPEC 01`（宏观架构），`SPEC 02`（2D 激光与常驻 EKF 已通）。Level 1 仿真底盘已挂载固态雷达 Livox Mid360。
 > **基准测试变体**：`mid360_2wd`。该变体挂载了 Livox Mid360 激光雷达和 IMU，满足 3D 空间感知的所有需求。`laser_*` 系列变体不含 3D 雷达，不在本 SPEC 的测试范围内。
-> **总工期预估**：3 天 | **原子交付单元数**：3
+> **总工期预估**：4 天 | **原子交付单元数**：4
 
 ---
 
@@ -14,10 +14,11 @@
 
 ### 1.1 本期开发目标
 
-将机器人感知维度由 2D 栅格升维至 3D 空间几何。利用固态雷达 Mid360 跑通 **"3D 雷达惯导紧耦合状态估计 → 空间高度切片投影伪激光 → 三维时空体素悬空避障 → 动态行人残影自动衰减"** 的完整流水线，并建立严密的里程计物理退化降级保护。
+将机器人感知维度由 2D 栅格升维至 3D 空间几何，基于仿真mid360 3D机器人提供平行的SLAM和导航方案。利用固态雷达 Mid360 跑通 **"3D 雷达惯导紧耦合状态估计 → 空间高度切片投影伪激光 → 三维时空体素悬空避障 → 动态行人残影自动衰减"** 的完整流水线，并建立严密的里程计物理退化降级保护。
 
 ### 1.2 本期严格不包含
-
+- 本期(SPEC 03)与 SPEC 02是平行、兼容切换关系，不是替代关系。
+- 编写与实现过程中必须确保 SPEC 02（laser_2wd + Cartographer）的功能正常，不得因 SPEC 03 的改动影响 SPEC 02 的运行。
 - 传统特征点视觉 VIO（ORB-SLAM3）与神经网络稠密 SLAM（SPEC 04）。
 - 顶层控制中枢 Lifecycle 状态机逻辑管理、大模型具身语义层（SPEC 05）。
 
@@ -39,24 +40,27 @@
 - `local_ekf_node` 继续常驻融合轮速计与物理 IMU，发布稳定的 `odom -> base_link` TF。**重要**：`odom -> base_link` 是 Level 2 的输出，不是 FAST-LIO2 的输出。FAST-LIO2 在数学上计算了"雷达相对于里程计起点的相对位姿"，但**禁止让它广播 `odom -> base_link` TF**。因为 SLAM 算法计算量大、遇到空旷/剧烈晃动会丢帧降频，若 Nav2 MPPI 直接吃 SLAM 的 TF 会引发急刹失控。正确分工：FAST-LIO2 = 纯 Topic 输出（`/slam_pose/fast_lio`），`local_ekf_node` = 独裁广播器，唯一发布 `odom -> base_link` TF，确保运控 50Hz+ 绝对不断流。
 - `global_ekf_node` 接收 `/slam_pose/fast_lio` 作为绝对位姿观测源，发布 `map -> odom` TF。
 
-**`ekf_global.yaml` 扩展变更要点（SPEC 02 → SPEC 03）**：
+**EKF 配置文件拆分（SPEC 02 ↔ SPEC 03 兼容切换）**：
 
-在 SPEC 02 的 `global_ekf_node` 配置基础上，新增 FAST-LIO2 位姿源为 `odom1`：
+为保持 SPEC 02（2D 激光 SLAM）和 SPEC 03（3D 激光‑惯导紧耦合）的平行兼容关系，分别维护两个独立的 EKF 配置文件：
 
-```yaml
-# ekf_global.yaml 变更（SPEC 03 新增部分）
-ekf_filter_node:
-  ros__parameters:
-    odom1: /slam_pose/fast_lio
-    odom1_config: [true, true, false,    # x, y, z 位置（观测X和Y，不观测Z）
-                   false, false, true,   # roll, pitch, yaw（仅观测Yaw）
-                   false, false, false,  # vx, vy, vz
-                   false, false, false]  # vroll, vpitch, vyaw
-    odom1_differential: false              # 绝对观测模式，不做差分
-    odom1_queue_size: 10
-```
+- `src/localization_mapping/adam_localization/config/ekf_global_2d.yaml`：用于 SPEC 02（保持 `two_d_mode: true`，`odom0: /slam_pose/cartographer`）。
+- `src/localization_mapping/adam_localization/config/ekf_global_3d.yaml`：用于 SPEC 03。设置 `two_d_mode: false`，FAST‑LIO2 作为绝对位姿观测源：
+  ```yaml
+  ekf_filter_node:
+    ros__parameters:
+      odom0: /slam_pose/fast_lio
+      odom0_config: [true, true, false,    # x, y, z 位置
+                     false, false, true,   # roll, pitch, yaw（仅观测Yaw）
+                     false, false, false,  # vx, vy, vz
+                     false, false, false]  # vroll, vpitch, vyaw
+      odom0_differential: false
+      odom0_queue_size: 10
+  ```
 
-> **注意**：SPEC 02 中的 `odom0` 仍对应 `/slam_pose/cartographer`（2D 位姿源）。当 SPEC 03 更新后，`odom0` 与 `odom1` 同时接入，Global EKF 融合两者的绝对位姿观测。`odom_health_monitor` 负责按协方差实时调节各源权重。
+对应的发射文件（如 `spec_02_all.launch.py`、未来的 `spec_03_all.launch.py`）直接指向各自的 YAML，无需额外启动参数。
+
+> **注意**：两套配置互不干扰，分别在各自的仿真启动中使用。避免在同一个文件中出现 `two_d_mode` 或冗余 `odomX` 的歧义，且易于后续规格扩展。
 
 **降级硬性逻辑**：写一个轻量级监控节点 `odom_health_monitor`。实时订阅 `/slam_pose/fast_lio`，提取其 `pose.covariance` 矩阵对角线元素（特别是 X, Y, Z 轴方差）。当方差均 ≤0.05 时，Global EKF 100% 信任 Fast-LIO2；一旦方差突变（≥0.5 或收到非数 NaN），监控节点通过服务或动态参数降低 Global EKF 中该位姿源的权重，将整车运控降级切换至底层常驻的轮速里程计，防止整车漂移撞墙。
 
@@ -187,9 +191,84 @@ local_costmap:
 
 ---
 
+### 📦 Unit 4: Nav2 全栈导航集成与地图持久化归档
+
+**功能描述**：在 SPEC 03 的 mid360_2wd 车型上，集成 Nav2 全栈导航（基于 STVL Local Costmap + pointcloud_to_laserscan Global Costmap）以及建图完成后的地图持久化归档机制。SPEC 03 的 Nav2 使用独立的配置文件 `nav2_stvl_config.yaml`，与 SPEC 02 的 `nav2_2d_config.yaml` 并存互不干扰。
+
+**数据流拓扑与输入输出**：
+- **输入话题**：`/slam_pose/fast_lio`（3D 里程计→global_ekf_node）、`/scan_3d_projected`（全局规划伪激光）、`/livox/lidar`（STVL 局部避障）、TF `odom→base_link`。
+- **输出**：`/cmd_vel`（MPPI 控制器输出）、地图归档文件（`~/.ros/adam_assets/maps_2d/`）。
+
+**Nav2 配置关键差异（与 SPEC 02 对比）**：
+- **Global Costmap**：`obstacle_layer` 输入源为 `/scan_3d_projected`（伪激光）。
+- **Local Costmap**：卸载 `obstacle_layer`，挂载 `spatio_temporal_voxel_layer`，输入源为 `/livox/lidar`。
+- **robot_base_frame**：`body`（mid360_2wd 坐标系根节点）。
+
+```yaml
+# nav2_stvl_config.yaml 核心参数（与 SPEC 02 nav2_2d_config.yaml 平行的独立文件）
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      global_frame: map
+      robot_base_frame: body
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        observation_sources: scan_projected
+        scan_projected:
+          topic: /scan_3d_projected
+          obstacle_max_range: 30.0
+          clearing: true
+          marking: true
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      global_frame: odom
+      robot_base_frame: body
+      rolling_window: true
+      width: 3
+      height: 3
+      resolution: 0.05
+      plugins: ["voxel_layer", "inflation_layer"]
+      voxel_layer:
+        plugin: "spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer"
+        publish_voxel_map: true
+        voxel_size: 0.05
+        voxels_size_x: 40
+        voxels_size_y: 40
+        voxels_size_z: 20
+        voxel_decay: 1.0
+        decay_model: 1
+        observation_sources: "lidar"
+        lidar:
+          topic: /livox/lidar
+          data_type: "PointCloud2"
+          expected_update_rate: 10.0
+```
+
+**地图持久化归档机制**：
+
+使用 `archive_map.py` 作为统一归档入口，`ros2 run adam_slam archive_map.py` 一键归档。脚本内自动判别当前 SLAM 后端（Cartographer / FAST-LIO2），两种模式无缝切换：
+
+```
+# archive_map.py 核心逻辑
+# 1. 自动检测 SLAM 后端
+#    ros2 service list → 存在 cartographer_node 则为 2D，存在 lio_node 则为 3D
+# 2. 根据后端导出地图：
+#    - Cartographer: 调用 /write_state 服务，导出 .pbstream
+#    - FAST-LIO2:    调用 /fastlio2/save_map 或保存世界云为 .pcd
+# 3. 复制到运行时缓存 ~/.ros/adam_assets/maps_2d/
+# 4. --commit 参数：同步到源码树 src/navigation_ai/adam_assets/share/maps_2d/
+```
+
+> **注**：当前已创建 `src/localization_mapping/adam_slam/scripts/archive_map.py`（见 SPEC 02 plan Task 4 Step 7），SPEC 03 实现时将其增强以支持 FAST-LIO2 后端。如果 FAST-LIO2 不支持直接导出 .pbstream，可改为保存 IKD-Tree 全局点云 PCD 作为等效地图产物。
+
+---
+
 ## 3. Bottom-Up 路线图与单点测试验收方案 (Gate Criteria)
 
-测试必须在仿真/真实物理环境中严格按照以下 3 步推进，并闭环通过白纸黑字的测试用例。
+测试必须在仿真/真实物理环境中严格按照以下 4 步推进，并闭环通过白纸黑字的测试用例。测试环境复用 SPEC 06 (`06_test_infrastructure.md`) 中定义的 `adam_test_tools` 工具包与 `test_3d_obstacles.world` 仿真世界。测试车辆为 `mid360_2wd`。
 
 ```
 [步骤 1: 3D LIO 调通 + 协方差退化测试]
@@ -199,6 +278,9 @@ local_costmap:
                  │
                  ▼
 [步骤 3: STVL 挂载 + 动态残影一秒消散验收]
+                 │
+                 ▼
+[步骤 4: Nav2 全栈导航 + 地图归档闭环验收]
 ```
 
 ---

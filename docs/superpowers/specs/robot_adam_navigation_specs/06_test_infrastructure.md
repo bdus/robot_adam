@@ -210,6 +210,16 @@ $ ros2 service call /test_tools/teleport custom_interfaces/srv/Teleport "{x: 5.0
   - 通过标准：1.0s ± 0.1s
   - 发布 verdict: `PASS` / `FAIL`
 
+#### `nav2_lifecycle_check.py`
+
+检查所有 Nav2 生命周期节点的状态。
+
+- **服务客户端**: 调用各 Nav2 节点的 `/get_state` 服务（`nav2_lifecycle_msgs/srv/GetState`）
+- **检查节点**: `controller_server`, `smoother_server`, `planner_server`, `behavior_server`, `bt_navigator`, `waypoint_follower`, `velocity_smoother`
+- **输出**: `/test_verdict/nav2_lifecycle` topic（`std_msgs/msg/String`）
+- **判定指标**: 所有检查节点必须处于 `active [3]` 状态
+- **通过标准**: 全部节点状态为 `active` → `PASS`，任一节点非 `active` → `FAIL`
+
 #### `pose_jump_detector.py`
 
 检测 `map → odom` TF 的位姿阶跃（SPEC 05 Gate 3）。
@@ -245,6 +255,7 @@ $ ros2 service call /test_tools/teleport custom_interfaces/srv/Teleport "{x: 5.0
 | 自主探索建图 | 02 Gate 3 | — | 手工验证 Rviz |
 | 地图归档 | 02 Gate 4 | — | 手工验证文件系统 |
 | 一帧重定位 | 02 Gate 5 | `teleport_robot` | `pose_jump_detector` |
+| Nav2 BT 生命周期 | 02 Gate 6 | — | `nav2_lifecycle_check` |
 | Nav2 避障自救 | 02 Gate 6 | `spawn_object` | 手工验证日志 |
 | FAST-LIO2 退化 | 03 Gate 1 | — | `odom_health_node` |
 | 悬空障碍物捕获 | 03 Gate 2 | `spawn_object` | 手工验证 Rviz |

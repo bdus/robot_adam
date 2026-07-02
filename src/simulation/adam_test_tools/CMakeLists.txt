@@ -5,6 +5,7 @@ find_package(ament_cmake REQUIRED)
 
 # Script nodes (ros2 run adam_test_tools <name>)
 install(PROGRAMS
+  scripts/publish_goal.py
   scripts/spawn_object.py
   scripts/teleport_robot.py
   scripts/control_light.py
@@ -16,6 +17,7 @@ install(PROGRAMS
 
 # Verification nodes
 install(PROGRAMS
+  verification/nav2_lifecycle_check.py
   verification/tf_monitor_node.py
   verification/odom_health_node.py
   verification/voxel_decay_meter.py
